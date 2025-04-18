@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Travel Assistant</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8f9fa;
+            color: #343a40;
+        }
+        .chat-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .chat-header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background-color: #ffffff;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        .chat-box {
+            height: 500px;
+            overflow-y: auto;
+            background-color: #ffffff;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        .message {
+            margin-bottom: 15px;
+            padding: 10px 15px;
+            border-radius: 20px;
+            max-width: 80%;
+            position: relative;
+        }
+        .user-message {
+            background-color: #e9ecef;
+            margin-left: auto;
+            border-bottom-right-radius: 5px;
+        }
+        .assistant-message {
+            background-color: #0d6efd;
+            color: white;
+            margin-right: auto;
+            border-bottom-left-radius: 5px;
+        }
+        .typing-indicator {
+            display: none;
+            margin-right: auto;
+            background-color: #e9ecef;
+            padding: 10px 20px;
+            border-radius: 20px;
+            margin-bottom: 15px;
+        }
+        .typing-indicator span {
+            height: 10px;
+            width: 10px;
+            background-color: #343a40;
+            border-radius: 50%;
+            display: inline-block;
+            margin: 0 2px;
+            animation: typing 1s infinite;
+        }
+        .typing-indicator span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        .typing-indicator span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        @keyframes typing {
+            0% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+            100% { transform: translateY(0); }
+        }
+        .card {
+            border-radius: 10px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .card-header {
+            background-color: #343a40;
+            color: white;
+            border-top-left-radius: 10px !important;
+            border-top-right-radius: 10px !important;
+        }
+        .btn-primary {
+            background-color: #0d6efd;
+            border-color: #0d6efd;
+        }
+        .loader {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5 chat-container">
+        <div class="chat-header">
+            <h1 class="mb-0">AI Travel Assistant</h1>
+            <p class="text-muted">Plan your perfect trip with intelligent assistance</p>
+        </div>
+        
+        <div class="chat-box" id="chatBox">
+            <!-- Messages will appear here -->
+        </div>
+        
+        <div class="typing-indicator" id="typingIndicator">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+        
+        <div class="input-group">
+            <input type="text" id="userInput" class="form-control" placeholder="Ask about your travel plans...">
+            <button class="btn btn-primary" type="button" id="sendButton">
+                <span id="sendText">Send</span>
+                <span id="loadingIndicator" class="loader d-none"></span>
+            </button>
+        </div>
+        
+        <div class="mt-3">
+            <button class="btn btn-outline-danger btn-sm" id="resetButton">Reset Conversation</button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const chatBox = document.getElementById('chatBox');
+            const userInput = document.getElementById('userInput');
+            const sendButton = document.getElementById('sendButton');
+            const resetButton = document.getElementById('resetButton');
+            const typingIndicator = document.getElementById('typingIndicator');
+            const sendText = document.getElementById('sendText');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            
+            // Add initial greeting
+            addMessage('Hello! I\'m your AI travel assistant. I can help you plan trips, find flights and hotels, and provide information about destinations. How may I assist you with your travel plans today?', 'assistant');
+            
+            // Send message on button click
+            sendButton.addEventListener('click', sendMessage);
+            
+            // Send message on Enter key
+            userInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+            
+            // Reset conversation
+            resetButton.addEventListener('click', resetConversation);
+            
+            function sendMessage() {
+                const message = userInput.value.trim();
+                if (message === '') return;
+                
+                // Add user message to chat
+                addMessage(message, 'user');
+                
+                // Clear input field
+                userInput.value = '';
+                
+                // Show typing indicator
+                typingIndicator.style.display = 'block';
+                
+                // Disable input and button while processing
+                userInput.disabled = true;
+                sendButton.disabled = true;
+                sendText.classList.add('d-none');
+                loadingIndicator.classList.remove('d-none');
+                
+                // Send message to backend
+                fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ message: message }),
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Hide typing indicator
+                    typingIndicator.style.display = 'none';
+                    
+                    // Add assistant response to chat
+                    addMessage(data.response, 'assistant');
+                    
+                    // Re-enable input and button
+                    userInput.disabled = false;
+                    sendButton.disabled = false;
+                    sendText.classList.remove('d-none');
+                    loadingIndicator.classList.add('d-none');
+                    
+                    // Focus the input field
+                    userInput.focus();
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    typingIndicator.style.display = 'none';
+                    addMessage('Sorry, I encountered an error processing your request. Please try again.', 'assistant');
+                    
+                    // Re-enable input and button
+                    userInput.disabled = false;
+                    sendButton.disabled = false;
+                    sendText.classList.remove('d-none');
+                    loadingIndicator.classList.add('d-none');
+                });
+            }
+            
+            function addMessage(content, sender) {
+                const messageDiv = document.createElement('div');
+                messageDiv.classList.add('message', `${sender}-message`);
+                
+                // Process markdown-like formatting for cards
+                if (sender === 'assistant' && content.includes('[card]') && content.includes('[/card]')) {
+                    const parts = content.split(/\[card\]|\[\/card\]/);
+                    
+                    for (let i = 0; i < parts.length; i++) {
+                        if (i % 2 === 0) {
+                            // Regular text
+                            if (parts[i].trim()) {
+                                const textSpan = document.createElement('div');
+                                textSpan.innerHTML = formatMessage(parts[i]);
+                                messageDiv.appendChild(textSpan);
+                            }
+                        } else {
+                            // Card content
+                            const cardData = parts[i].trim().split('|');
+                            if (cardData.length >= 2) {
+                                const cardTitle = cardData[0].trim();
+                                const cardContent = cardData[1].trim();
+                                const cardLink = cardData[2] ? cardData[2].trim() : null;
+                                
+                                const cardDiv = document.createElement('div');
+                                cardDiv.classList.add('card', 'my-2');
+                                cardDiv.innerHTML = `
+                                    <div class="card-header py-2">
+                                        <strong>${cardTitle}</strong>
+                                    </div>
+                                    <div class="card-body py-2">
+                                        <p class="card-text">${formatMessage(cardContent)}</p>
+                                        ${cardLink ? `<a href="${cardLink}" target="_blank" class="btn btn-sm btn-outline-primary">View Details</a>` : ''}
+                                    </div>
+                                `;
+                                messageDiv.appendChild(cardDiv);
+                            }
+                        }
+                    }
+                } else {
+                    // Regular message
+                    messageDiv.innerHTML = formatMessage(content);
+                }
+                
+                chatBox.appendChild(messageDiv);
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }
+            
+            function formatMessage(message) {
+                // Replace URLs with links
+                message = message.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank">$1</a>');
+                
+                // Replace line breaks with <br>
+                message = message.replace(/\n/g, '<br>');
+                
+                return message;
+            }
+            
+            function resetConversation() {
+                // Send reset request to backend
+                fetch('/api/reset', {
+                    method: 'POST',
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Clear chat box
+                    chatBox.innerHTML = '';
+                    
+                    // Add initial greeting
+                    addMessage('Hello! I\'m your AI travel assistant. I can help you plan trips, find flights and hotels, and provide information about destinations. How may I assist you with your travel plans today?', 'assistant');
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+            }
+        });
+    </script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
