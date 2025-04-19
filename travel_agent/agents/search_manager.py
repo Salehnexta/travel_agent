@@ -76,9 +76,8 @@ class SearchManager:
                 self._search_visa_requirements(state)
             
             else:
-                # Default searches
-                self._search_hotels(state)
-                self._search_flights(state)
+                # Default searches - use parallel search for speed
+                self._search_parallel(state)
             
             # Update conversation stage to response generation
             state.update_conversation_stage(ConversationStage.RESPONSE_GENERATION)
@@ -173,6 +172,137 @@ class SearchManager:
         except Exception as e:
             logger.error(f"Error in hotel search: {str(e)}")
     
+    def _search_parallel(self, state: TravelState) -> None:
+        """
+        Execute multiple searches in parallel for better performance.
+        
+        Args:
+            state: The current TravelState
+        """
+        destination = state.get_primary_destination()
+        origin = state.origins[0] if state.origins else None
+        dates = state.get_primary_date_range()
+        
+        if not destination or not origin:
+            logger.warning("Cannot perform parallel search: missing origin or destination")
+            return
+            
+        # Prepare search parameters
+        departure_date = None
+        return_date = None
+        
+        if dates and dates.start_date:
+            departure_date = dates.start_date.isoformat()
+            if dates.end_date:
+                return_date = dates.end_date.isoformat()
+                
+        # Handle temporal references
+        parsed_departure_date = self._resolve_temporal_reference(departure_date)
+        parsed_return_date = self._resolve_temporal_reference(return_date) if return_date else None
+        
+        # Get number of travelers
+        num_people = 2  # Default
+        if state.travelers:
+            num_people = state.travelers.total
+        
+        # Create multiple queries for parallel execution
+        queries = [
+            # Flight search query
+            {
+                'query': f"flights from {origin.name} to {destination.name} on {parsed_departure_date}",
+                'search_type': 'organic',
+                'num_results': 10
+            },
+            # Hotel search query
+            {
+                'query': f"hotels in {destination.name} check in {parsed_departure_date} check out {parsed_return_date} for {num_people} guests",
+                'search_type': 'organic',
+                'location': destination.name,
+                'num_results': 5
+            },
+            # Destination info query
+            {
+                'query': f"travel guide {destination.name} tourism",
+                'search_type': 'organic',
+                'num_results': 3
+            }
+        ]
+        
+        try:
+            logger.info(f"Executing parallel search for {destination.name}")
+            # Execute parallel search
+            parallel_results = self.search_tools.search_parallel(queries)
+            
+            # Process flight results
+            flight_result = next((r for r in parallel_results if 'flights from' in r['query']['query']), None)
+            if flight_result and 'result' in flight_result:
+                raw_result = flight_result['result']
+                
+                # Parse the results into structured flight data
+                search_params = {
+                    "origin": origin.name,
+                    "destination": destination.name,
+                    "date": parsed_departure_date
+                }
+                structured_flights = SearchResultParser.process_search_results(
+                    raw_result, "flight", search_params
+                )
+                
+                # Create and add search result
+                flight_search_result = SearchResult(
+                    type="flight",
+                    source="serper",
+                    data={
+                        "structured": structured_flights,
+                        "raw": raw_result.get("organic", []),  # Include all raw results
+                        "query": queries[0]['query']
+                    }
+                )
+                state.add_search_result(flight_search_result)
+            
+            # Process hotel results
+            hotel_result = next((r for r in parallel_results if 'hotels in' in r['query']['query']), None)
+            if hotel_result and 'result' in hotel_result:
+                raw_result = hotel_result['result']
+                
+                # Parse the results into structured hotel data
+                search_params = {
+                    "location": destination.name,
+                    "check_in": parsed_departure_date,
+                    "check_out": parsed_return_date
+                }
+                structured_hotels = SearchResultParser.process_search_results(
+                    raw_result, "hotel", search_params
+                )
+                
+                # Create and add search result
+                hotel_search_result = SearchResult(
+                    type="hotel",
+                    source="serper",
+                    data={
+                        "structured": structured_hotels,
+                        "raw": raw_result.get("organic", []),  # Include all raw results
+                        "query": queries[1]['query']
+                    }
+                )
+                state.add_search_result(hotel_search_result)
+            
+            # Process destination info
+            dest_result = next((r for r in parallel_results if 'travel guide' in r['query']['query']), None)
+            if dest_result and 'result' in dest_result:
+                raw_result = dest_result['result']
+                
+                # Create and add search result
+                destination_result = SearchResult(
+                    type="destination",
+                    source="serper",
+                    data=raw_result
+                )
+                state.add_search_result(destination_result)
+                
+        except Exception as e:
+            logger.error(f"Error in parallel search execution: {str(e)}")
+    
     def _search_flights(self, state: TravelState) -> None:
         """
         Search for flights based on the state parameters.
@@ -244,7 +374,7 @@ class SearchManager:
                 source="serper",
                 data={
                     "structured": structured_flights,
-                    "raw": raw_result.get("organic", [])[:5],  # Include top 5 raw results
+                    "raw": raw_result.get("organic", []),  # Include all raw flight results
                     "query": query
                 }
             )

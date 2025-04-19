@@ -1,14 +1,27 @@
 import os
 import json
-import logging
 import time
-from typing import Dict, Any, List, Optional
+import logging
+import redis
+import hashlib
+import concurrent.futures
+from typing import Dict, Any, List, Optional, Tuple
+from datetime import datetime
 import requests
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Configure Redis connection
+redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+redis_client = redis.from_url(
+    redis_url,
+    socket_timeout=10,  # Faster timeout for cache operations
+    socket_connect_timeout=5,
+    retry_on_timeout=True
+)
 
 
 class SearchException(Exception):
@@ -50,17 +63,49 @@ class SearchToolManager:
         
         self.base_url = "https://google.serper.dev"
         self.cache_enabled = cache_enabled
-        self.cache = {}  # Simple in-memory cache
-        self.cache_ttl = 3600  # Cache TTL in seconds (1 hour)
+        self.cache_ttl = 7200  # Cache TTL in seconds (2 hours)
+        self.session = requests.Session()  # Persistent session for connection pooling
+        
+        # Configure session for better performance
+        adapter = requests.adapters.HTTPAdapter(
+            pool_connections=10,
+            pool_maxsize=20,
+            max_retries=3
+        )
+        self.session.mount('https://', adapter)
     
     def _generate_cache_key(self, query: str, search_type: str, location: Optional[str]) -> str:
         """Generate a unique key for caching search results."""
         location_str = location if location else "global"
-        return f"{query}::{search_type}::{location_str}"
+        # Create a hash of the query parameters for shorter keys
+        combined = f"{query}::{search_type}::{location_str}"
+        return f"search:{hashlib.md5(combined.encode()).hexdigest()}"
     
-    def _is_cache_valid(self, timestamp: float) -> bool:
-        """Check if a cached item is still valid based on TTL."""
-        return (time.time() - timestamp) < self.cache_ttl
+    def _get_from_cache(self, cache_key: str) -> Optional[Dict]:
+        """Get results from Redis cache if they exist and are valid."""
+        if not self.cache_enabled:
+            return None
+            
+        try:
+            cached_data = redis_client.get(cache_key)
+            if cached_data:
+                logger.info(f"Cache hit for key: {cache_key}")
+                return json.loads(cached_data)
+            return None
+        except Exception as e:
+            logger.warning(f"Error accessing cache: {str(e)}")
+            return None
+            
+    def _save_to_cache(self, cache_key: str, data: Dict) -> None:
+        """Save results to Redis cache with TTL."""
+        if not self.cache_enabled:
+            return
+            
+        try:
+            redis_client.setex(cache_key, self.cache_ttl, json.dumps(data))
+            logger.info(f"Saved to cache: {cache_key}")
+        except Exception as e:
+            logger.warning(f"Error saving to cache: {str(e)}")
     
     @retry(
         retry=retry_if_exception_type((RateLimitException, requests.exceptions.Timeout, 
@@ -92,14 +137,13 @@ class SearchToolManager:
             APIKeyException: If there are issues with the API key
             SearchRequestException: For other request errors
         """
-        # Check cache first if enabled
-        if self.cache_enabled:
-            cache_key = self._generate_cache_key(query, search_type, location)
-            if cache_key in self.cache:
-                timestamp, cached_data = self.cache[cache_key]
-                if self._is_cache_valid(timestamp):
-                    logger.info(f"Cache hit for query: {query}")
-                    return cached_data
+        # Generate cache key
+        cache_key = self._generate_cache_key(query, search_type, location)
+        
+        # Check Redis cache first if enabled
+        cached_result = self._get_from_cache(cache_key)
+        if cached_result:
+            return cached_result
         
         # Proceed with API request if no valid cache found
         if not self.api_key:
@@ -112,7 +156,10 @@ class SearchToolManager:
         
         payload = {
             'q': query,
-            'num': num_results
+            'gl': 'us',  # Geolocation parameter - could be dynamically set
+            'hl': 'en',  # Language parameter
+            'autocorrect': True,
+            'num': min(num_results, 10)  # Limit number of results to improve speed
         }
         
         if location:
@@ -128,7 +175,12 @@ class SearchToolManager:
         
         try:
             start_time = time.time()
-            response = requests.post(url, headers=headers, json=payload, timeout=10)
+            response = self.session.post(
+                f"{self.base_url}{endpoint}", 
+                headers=headers, 
+                json=payload,
+                timeout=5  # Reduced timeout for faster API requests
+            )
             end_time = time.time()
             
             # Handle HTTP errors
@@ -156,10 +208,8 @@ class SearchToolManager:
                 'timestamp': time.time()
             }
             
-            # Cache the result if caching is enabled
-            if self.cache_enabled:
-                cache_key = self._generate_cache_key(query, search_type, location)
-                self.cache[cache_key] = (time.time(), result)
+            # Cache the successful result in Redis
+            self._save_to_cache(cache_key, result)
             
             return result
             
@@ -178,6 +228,51 @@ class SearchToolManager:
         except Exception as e:
             logger.error(f"Unexpected error in search: {str(e)}")
             raise SearchRequestException(f"Search failed: {str(e)}")
+    
+    def search_parallel(self, queries: List[Dict]) -> List[Dict[str, Any]]:
+        """
+        Perform multiple search queries in parallel using threading.
+        
+        Args:
+            queries: List of query dictionaries, each containing query parameters
+                    (query, search_type, location, num_results)
+                    
+        Returns:
+            List of search result dictionaries
+        """
+        results = []
+        
+        # Use ThreadPoolExecutor for parallel execution
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            # Submit all search tasks
+            future_to_query = {}
+            for query_params in queries:
+                future = executor.submit(
+                    self.search,
+                    query=query_params.get('query', ''),
+                    search_type=query_params.get('search_type', 'organic'),
+                    location=query_params.get('location'),
+                    num_results=query_params.get('num_results', 5)
+                )
+                future_to_query[future] = query_params
+            
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_query):
+                query_params = future_to_query[future]
+                try:
+                    result = future.result()
+                    results.append({
+                        'query': query_params,
+                        'result': result
+                    })
+                except Exception as e:
+                    logger.error(f"Error in parallel search: {str(e)}")
+                    results.append({
+                        'query': query_params,
+                        'error': str(e)
+                    })
+        
+        return results
     
     def search_hotels(self, location: str, check_in: Optional[str] = None, 
                      check_out: Optional[str] = None, num_people: int = 2) -> Dict[str, Any]:
@@ -239,6 +334,7 @@ class SearchToolManager:
     def search_flights(self, origin: str, destination: str, 
                       departure_date: Optional[str] = None, 
                       return_date: Optional[str] = None,
+                      num_passengers: int = 1,
                       time_preference: Optional[str] = None) -> Dict[str, Any]:
         """
         Search for flights between locations.

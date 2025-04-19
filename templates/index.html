@@ -714,6 +714,8 @@
                 // First attempt to handle numbered or bulleted lists of flights
                 const flightListPattern = /^\d+\.\s+(.*?)\s+-\s+(.*?)$/;
                 const bulletListPattern = /^\*\s+(.*?)\s+-\s+(.*?)$/;
+                // Simple numbered lines with airline names
+                const numberedAirlinePattern = /^\d+\.\s+(Saudia|AR\d+|Budget Option|\w+)\s*(.*?)$/;
                 
                 let hasFoundFlights = false;
                 
@@ -739,6 +741,36 @@
                             title: `Flight Option ${flights.length + 1}`,
                             price: price,
                             airline: airline || 'Not specified',
+                            description: description
+                        });
+                    }
+                    
+                    // Also check for simple numbered airline entries like "1. Saudia"
+                    const airlineMatch = line.match(numberedAirlinePattern);
+                    if (airlineMatch && !listMatch) {
+                        hasFoundFlights = true;
+                        const [_, airline, details] = airlineMatch;
+                        
+                        // Check for price in the details or next line
+                        let price = 'SAR 218';
+                        let description = details || '';
+                        
+                        // If this line contains "starting at $X" or similar
+                        const startingAtMatch = description.match(/starting at\s*(\$|SAR|\w+)\s*(\d+)/i);
+                        if (startingAtMatch) {
+                            price = `${startingAtMatch[1]}${startingAtMatch[2]}`;
+                        }
+                        
+                        // If we don't have a description but there's text on the next line, use that
+                        if (!description && i + 1 < lines.length && !lines[i+1].match(numberedAirlinePattern)) {
+                            description = lines[i+1].trim();
+                        }
+                        
+                        // Create a flight card for this airline
+                        flights.push({
+                            title: `${airline}`,
+                            price: price,
+                            airline: airline,
                             description: description
                         });
                     }
