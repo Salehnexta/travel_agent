@@ -151,6 +151,11 @@ class TravelState(BaseModel):
         """Add a destination."""
         self.destinations.append(destination)
         self.extracted_parameters.add("destination")
+        
+    def add_origin(self, origin: LocationParameter):
+        """Add an origin location."""
+        self.origins.append(origin)
+        self.extracted_parameters.add("origin")
     
     def add_preference(self, preference: PreferenceParameter):
         """Add a preference to the state."""

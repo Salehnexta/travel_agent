@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional
 from flask import Flask, request, jsonify, render_template, session
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from flask_cors import CORS
 from dotenv import load_dotenv
 from uuid import uuid4
 
@@ -23,6 +24,9 @@ logger = logging.getLogger(__name__)
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key')
+
+# Enable CORS for all routes
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Configure Redis with connection pooling and timeouts
 redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
@@ -80,7 +84,7 @@ def index():
 
 
 @app.route('/api/chat', methods=['POST'])
-@limiter.limit("30 per minute")
+@limiter.exempt
 def chat():
     """Handle chat API endpoint."""
     try:
@@ -123,6 +127,7 @@ def chat():
 
 
 @app.route('/api/reset', methods=['POST'])
+@limiter.exempt
 def reset_session():
     """Reset the user's session."""
     try:
@@ -146,6 +151,7 @@ def reset_session():
 
 
 @app.route('/health')
+@limiter.exempt
 def health_check():
     """Health check endpoint for monitoring."""
     try:

@@ -3,6 +3,7 @@ import json
 import re
 from typing import Dict, Any, List, Optional
 from datetime import datetime, date, timedelta
+from travel_agent.date_processor import post_process_date_values
 
 from travel_agent.state_definitions import (
     TravelState, ConversationStage, 
@@ -320,11 +321,38 @@ class ParameterExtractionAgent:
         # Get recent conversation context
         conversation_context = state.get_conversation_context(num_messages=5)
         
-        # Create system prompt
-        system_prompt = """
+        # Get current date for temporal references
+        current_date = datetime.now().date()
+        tomorrow_date = (current_date + timedelta(days=1)).strftime("%Y-%m-%d")
+        next_week_date = (current_date + timedelta(days=7)).strftime("%Y-%m-%d")
+        weekend_date = (current_date + timedelta(days=(5 - current_date.weekday()) % 7)).strftime("%Y-%m-%d")
+        
+        # Create system prompt with explicit current date information
+        system_prompt = f"""
         You are an AI assistant specialized in travel planning. Extract travel parameters from the user's message.
-        Pay special attention to airport codes (like JFK, LAX, DMM, RUH) which should be recognized as locations.
+        Pay special attention to airport codes (like JFK, LAX, DMM, RUH, BKK) which should be recognized as locations.
+        
+        For airport codes, apply the following mappings:
+        - BKK = Bangkok, Thailand
+        - DMM = Dammam, Saudi Arabia
+        - JED = Jeddah, Saudi Arabia
+        - RUH = Riyadh, Saudi Arabia
+        - DXB = Dubai, UAE
+        - AUH = Abu Dhabi, UAE
+        - DOH = Doha, Qatar
+        - CAI = Cairo, Egypt
+        
+        When a user mentions an airport code in a hotel search (e.g., "hotel in BKK"), interpret this as the city name (e.g., "hotel in Bangkok").
+        
         If you detect flight information, make sure to identify origin and destination correctly.
+        Pay attention to timeframes like "1 day" which should be interpreted as the duration of stay.
+        
+        TODAY'S DATE: The current date is {current_date.strftime("%Y-%m-%d")}. Use this as the reference point.
+        For temporal references, use these EXACT dates:
+        - "today" = {current_date.strftime("%Y-%m-%d")}
+        - "tomorrow" = {tomorrow_date}
+        - "next week" = {next_week_date}
+        - "weekend" = {weekend_date}
         
         Focus on identifying:
         1. Destinations (where the user wants to go)
@@ -333,6 +361,13 @@ class ParameterExtractionAgent:
         4. Travelers (number of adults, children, infants)
         5. Budget information (min, max, currency)
         6. Preferences (for hotels, flights, activities, etc.)
+        7. Duration of stay (important for hotel bookings)
+        
+        For temporal expressions, always convert them to actual dates in YYYY-MM-DD format.
+        For example, if today is {current_date.strftime("%Y-%m-%d")}:
+        - "tomorrow" → "{tomorrow_date}"
+        - "next week" → "{next_week_date}"
+        - "weekend" → "{weekend_date}"
         
         Format dates as YYYY-MM-DD. Assign confidence scores (0.0-1.0) to each extraction based on clarity.
         If a parameter isn't mentioned, don't include it in the JSON or leave its array empty.
@@ -371,31 +406,8 @@ class ParameterExtractionAgent:
                     # Re-raise if we don't have any fallback parameters
                     raise
             
-            # Merge directly extracted flight params with LLM results
-            if flight_params and extracted_data:
-                # Make sure flight params take precedence
-                if "origin" in flight_params and "origins" in extracted_data:
-                    # Keep origins from LLM but ensure our direct extraction is first
-                    for origin in extracted_data.get("origins", []):
-                        if origin.get("name") != flight_params["origin"].get("name"):
-                            flight_params.setdefault("origins", []).append(origin)
-                
-                if "destination" in flight_params and "destinations" in extracted_data:
-                    # Same for destinations
-                    for dest in extracted_data.get("destinations", []):
-                        if dest.get("name") != flight_params["destination"].get("name"):
-                            flight_params.setdefault("destinations", []).append(dest)
-                
-                # Merge other parameters
-                for key, value in extracted_data.items():
-                    if key not in flight_params or not flight_params[key]:
-                        flight_params[key] = value
-                
-                return flight_params
-            
-            # If we have direct flight params, return those even if LLM failed
+            # Make sure we have properly structured data for destinations/origins arrays
             if flight_params:
-                # Make sure we have properly structured data for destinations/origins arrays
                 if "origin" in flight_params and "origins" not in flight_params:
                     # Convert direct origin to origins array format
                     flight_params["origins"] = [{
@@ -422,18 +434,50 @@ class ParameterExtractionAgent:
                         "flexible": False,
                         "confidence": 0.9
                     }]
+            
+            # Merge directly extracted flight params with LLM results
+            if flight_params and extracted_data:
+                # Make sure flight params take precedence
+                if "origin" in flight_params and "origins" in extracted_data:
+                    # Keep origins from LLM but ensure our direct extraction is first
+                    for origin in extracted_data.get("origins", []):
+                        if origin.get("name") != flight_params["origin"].get("name"):
+                            flight_params.setdefault("origins", []).append(origin)
                 
-                # Always include a default traveler count
-                if "travelers" not in flight_params:
-                    flight_params["travelers"] = {
-                        "type": "adult",
-                        "count": 1
-                    }
+                if "destination" in flight_params and "destinations" in extracted_data:
+                    # Same for destinations
+                    for dest in extracted_data.get("destinations", []):
+                        if dest.get("name") != flight_params["destination"].get("name"):
+                            flight_params.setdefault("destinations", []).append(dest)
                 
-                return flight_params
+                # Add other parameters from extracted data
+                if "dates" in extracted_data:
+                    flight_params["dates"] = extracted_data["dates"]
+                if "travelers" in extracted_data:
+                    flight_params["travelers"] = extracted_data["travelers"]
+                if "budget" in extracted_data:
+                    flight_params["budget"] = extracted_data["budget"]
+                if "preferences" in extracted_data:
+                    flight_params["preferences"] = extracted_data["preferences"]
                 
-            # Otherwise return LLM results
-            return extracted_data or {}
+                params = flight_params
+            elif extracted_data:
+                params = extracted_data
+            else:
+                params = flight_params
+                
+            # Post-process dates to ensure correct temporal references
+            if params and "dates" in params and params["dates"]:
+                post_process_date_values(params["dates"])
+            
+            # Always include a default traveler count
+            if "travelers" not in params:
+                params["travelers"] = {
+                    "type": "adult",
+                    "count": 1
+                }
+                
+            return params
             
         except Exception as e:
             logger.error(f"Error in parameter extraction: {str(e)}")

@@ -156,22 +156,113 @@ class ResponseGenerator:
                 
                 # Format data based on result type
                 if result_type == "hotel":
-                    hotels = result.data.get("hotels", [])
-                    formatted_text += f"Found {len(hotels)} hotels for {result.data.get('query_location', 'the location')}:\n"
+                    # Get structured hotels from the enhanced parser
+                    structured_hotels = result.data.get("structured", [])
                     
-                    for j, hotel in enumerate(hotels[:3], 1):  # Limit to 3 hotels
-                        formatted_text += f"- {hotel.get('name', 'Unknown Hotel')}: {hotel.get('description', 'No description')}. URL: {hotel.get('link', 'No link')}\n"
+                    if structured_hotels:
+                        formatted_text += f"Found {len(structured_hotels)} hotels for {result.data.get('location', 'the location')}:\n"
+                        
+                        for j, hotel in enumerate(structured_hotels[:3], 1):  # Limit to 3 hotels
+                            hotel_text = f"- {hotel.get('title', 'Unknown Hotel')}"
+                            
+                            # Add details if available
+                            if hotel.get("price"):
+                                hotel_text += f" - {hotel.get('price')}"
+                            if hotel.get("rating"):
+                                hotel_text += f" - {hotel.get('rating')}"
+                                
+                            # Add source and link
+                            hotel_text += f" (via {hotel.get('source', 'Hotel Search')})"
+                            if hotel.get("link"):
+                                hotel_text += f"\n  Booking link: {hotel.get('link')}"
+                            
+                            formatted_text += f"{hotel_text}\n"
+                    else:
+                        # Fall back to raw hotels data if available
+                        raw_hotels = result.data.get("raw", [])
+                        formatted_text += f"Found hotel options for {result.data.get('location', 'the location')}:\n"
+                        
+                        for j, hotel in enumerate(raw_hotels[:3], 1):  # Limit to 3 hotels
+                            formatted_text += f"- {hotel.get('title', 'Unknown Hotel')}: {hotel.get('snippet', 'No description')}\n"
                 
                 elif result_type == "flight":
-                    flights = result.data.get("flights", [])
-                    formatted_text += f"Found {len(flights)} flight options from {result.data.get('origin', 'origin')} to {result.data.get('destination', 'destination')}:\n"
+                    # Get structured flights from the enhanced parser
+                    structured_flights = result.data.get("structured", [])
                     
-                    for j, flight in enumerate(flights[:3], 1):  # Limit to 3 flights
-                        formatted_text += f"- {flight.get('title', 'Unknown Flight')}: {flight.get('description', 'No description')}. URL: {flight.get('link', 'No link')}\n"
+                    # Get origin, destination, and date information
+                    query = result.data.get("query", "")
+                    search_params = {}
                     
-                    providers = result.data.get("providers", [])
-                    if providers:
-                        formatted_text += f"Booking providers: {', '.join(providers)}\n"
+                    # Try to extract origin and destination from results
+                    if structured_flights:
+                        first_flight = structured_flights[0]
+                        origin = first_flight.get("origin", "origin")
+                        destination = first_flight.get("destination", "destination")
+                        date = first_flight.get("date", "")
+                    else:
+                        # Fall back to parsing from query
+                        origin = "unknown origin"
+                        destination = "unknown destination"
+                        date = ""
+                        
+                        # Try to extract from query
+                        if "from" in query and "to" in query:
+                            query_parts = query.split()
+                            try:
+                                from_index = query_parts.index("from")
+                                to_index = query_parts.index("to")
+                                if from_index + 1 < len(query_parts):
+                                    origin = query_parts[from_index + 1]
+                                if to_index + 1 < len(query_parts):
+                                    destination = query_parts[to_index + 1]
+                            except ValueError:
+                                pass
+                    
+                    # Format the flight options heading
+                    formatted_text += f"Found flight options from {origin} to {destination}"
+                    if date:
+                        formatted_text += f" on {date}"
+                    formatted_text += ":\n"
+                    
+                    # Display structured flight options
+                    if structured_flights:
+                        formatted_text += "\nFLIGHT OPTIONS:\n"
+                        for j, flight in enumerate(structured_flights[:5], 1):  # Show up to 5 flights
+                            flight_text = f"- Option {j}: "
+                            
+                            # Add airline and flight number if available
+                            if flight.get("airline"):
+                                flight_text += f"{flight.get('airline')} "
+                            if flight.get("flight_number"):
+                                flight_text += f"Flight {flight.get('flight_number')} "
+                                
+                            # Add times if available
+                            has_times = False
+                            if flight.get("departure_time"):
+                                flight_text += f"Departs: {flight.get('departure_time')} "
+                                has_times = True
+                            if flight.get("arrival_time"):
+                                flight_text += f"Arrives: {flight.get('arrival_time')} "
+                                has_times = True
+                                
+                            # Add price information
+                            if flight.get("price"):
+                                flight_text += f"Price: {flight.get('price')} "
+                                
+                            # Add source info
+                            flight_text += f"(via {flight.get('source', 'Flight Search')})"
+                            
+                            # Add synthetic data disclaimer if applicable
+                            if flight.get("synthetic"):
+                                flight_text += " (estimated)"
+                                
+                            formatted_text += f"{flight_text}\n"
+                    else:
+                        # Fall back to raw search results
+                        raw_flights = result.data.get("raw", [])
+                        formatted_text += "\nFLIGHT SEARCH RESULTS:\n"
+                        for j, flight in enumerate(raw_flights[:3], 1):  # Limit to 3 flights
+                            formatted_text += f"- {flight.get('title', 'Unknown Flight')}: {flight.get('snippet', '')}\n"
                 
                 elif result_type == "destination":
                     general = result.data.get("general", {})
@@ -278,8 +369,21 @@ class ResponseGenerator:
                 return "To help plan your trip, I need to know where you'd like to go. Could you please tell me your desired destination?"
             elif "dates" in missing_params:
                 return "When are you planning to travel? Knowing your travel dates will help me find the best options for you."
+            elif "origin" in missing_params and any(term in state.get_latest_user_query().lower() for term in ["flight", "fly", "plane"]):
+                return "I can help you find flights, but I need to know where you'll be flying from. Could you please tell me your departure city or airport?"
             else:
                 return "I need a bit more information to help plan your trip. Could you tell me more about your travel plans?"
+        
+        # Check for temporal references that didn't resolve properly
+        if state.dates:
+            for date_param in state.dates:
+                if date_param.start_date in ["tomorrow", "next week", "weekend", "this weekend", "nextweek"]:
+                    # Update the generic response to acknowledge the temporal reference
+                    return (
+                        "I understand you want to travel "  + date_param.start_date + ". "
+                        "I'll convert that to an actual date for searching. "
+                        "Is there anything specific you're looking for in your travel options?"
+                    )
         
         # Default response
         return (

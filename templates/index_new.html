@@ -243,173 +243,11 @@
         /* Travel Cards */
         .flight-card, .hotel-card {
             border: 1px solid var(--border-color);
-            border-radius: 12px;
-            margin: 24px 0;
-            background-color: white;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            overflow: hidden;
-            position: relative;
-        }
-        
-        .flight-card {
-            display: grid;
-            grid-template-columns: 1fr auto;
-            border-bottom: 1px solid var(--border-color);
-        }
-        
-        .flight-card-content {
-            padding: 20px;
-            display: flex;
-            align-items: center;
-        }
-        
-        .airline-logo {
-            width: 50px;
-            height: 50px;
-            margin-right: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background-color: #f3f4f6;
             border-radius: 8px;
-            font-weight: bold;
-            color: #666;
-            font-size: 12px;
-            flex-shrink: 0;
-        }
-        
-        .flight-info {
-            flex-grow: 1;
-        }
-        
-        .flight-route {
-            display: flex;
-            align-items: center;
-            margin-bottom: 8px;
-            font-size: 18px;
-            font-weight: 500;
-            color: #333;
-        }
-        
-        .flight-time {
-            font-weight: 700;
-        }
-        
-        .flight-airport {
-            color: #666;
-            font-size: 16px;
-        }
-        
-        .flight-duration {
-            margin: 0 15px;
-            color: #666;
-            font-size: 14px;
-            text-align: center;
-            position: relative;
-            padding-bottom: 8px;
-        }
-        
-        .flight-line {
-            height: 2px;
-            background-color: #ddd;
-            width: 100%;
-            position: relative;
-            margin: 5px 0;
-        }
-        
-        .flight-line::after {
-            content: '✈️';
-            position: absolute;
-            font-size: 14px;
-            top: -9px;
-            right: -5px;
-            transform: rotate(45deg);
-        }
-        
-        .flight-type {
-            font-size: 14px;
-            color: var(--primary-color);
-            text-align: center;
-        }
-        
-        .flight-price-container {
-            background-color: #f9f9f9;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            min-width: 120px;
-            border-left: 1px solid var(--border-color);
-        }
-        
-        .flight-deals {
-            font-size: 12px;
-            color: #666;
-            margin-bottom: 5px;
-        }
-        
-        .flight-price {
-            font-size: 22px;
-            font-weight: 700;
-            color: #333;
-            margin-bottom: 15px;
-        }
-        
-        .select-button {
-            background-color: #0f172a;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            padding: 8px 16px;
-            font-size: 16px;
-            font-weight: 500;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-        }
-        
-        .select-button::after {
-            content: '→';
-            margin-left: 8px;
-        }
-        
-        .eco-info {
-            background-color: #f2f7f5;
-            color: #333;
-            padding: 8px 16px;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        
-        .eco-info-icon {
-            background-color: #003b70;
-            color: white;
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
-            font-weight: bold;
-        }
-        
-        .favorite-button {
-            position: absolute;
-            right: 15px;
-            top: 15px;
-            background: none;
-            border: none;
-            font-size: 22px;
-            cursor: pointer;
-            color: #ddd;
-        }
-        
-        .favorite-button:hover {
-            color: #ff3b30;
+            padding: 16px;
+            margin: 16px 0;
+            background-color: white;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
         }
         
         .card-header {
@@ -428,13 +266,6 @@
         .card-price {
             font-weight: 700;
             color: var(--primary-color);
-        }
-        
-        .card-description {
-            margin-bottom: 12px;
-            font-size: 14px;
-            color: #666;
-            line-height: 1.4;
         }
         
         .flight-details, .hotel-details {
@@ -596,9 +427,6 @@
             resetButton.addEventListener('click', resetConversation);
             resetAllButton.addEventListener('click', resetAllConversations);
             
-            // Store session ID globally
-            let currentSessionId = null;
-            
             function sendMessage() {
                 const message = userInput.value.trim();
                 if (message === '') return;
@@ -620,29 +448,18 @@
                 userInput.disabled = true;
                 sendButton.disabled = true;
                 
-                // Send message to backend with the session ID if we have one
-                const requestBody = { message: message };
-                if (currentSessionId) {
-                    requestBody.session_id = currentSessionId;
-                }
-                
+                // Send message to backend
                 fetch('/api/chat', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify(requestBody),
+                    body: JSON.stringify({ message: message }),
                 })
                 .then(response => response.json())
                 .then(data => {
                     // Hide typing indicator
                     typingIndicator.style.display = 'none';
-                    
-                    // Save the session ID for future requests
-                    if (data.session_id) {
-                        currentSessionId = data.session_id;
-                        console.log('Using session ID:', currentSessionId);
-                    }
                     
                     // Add assistant response to chat
                     addMessage(data.response, 'assistant');
@@ -709,173 +526,47 @@
             function formatFlightResults(message) {
                 const lines = message.split('\n');
                 let formattedHTML = '';
-                let flights = [];
-                
-                // First attempt to handle numbered or bulleted lists of flights
-                const flightListPattern = /^\d+\.\s+(.*?)\s+-\s+(.*?)$/;
-                const bulletListPattern = /^\*\s+(.*?)\s+-\s+(.*?)$/;
-                
-                let hasFoundFlights = false;
+                let inFlightSection = false;
+                let currentFlight = {};
                 
                 for (let i = 0; i < lines.length; i++) {
                     const line = lines[i].trim();
                     
-                    // Parse numbered flight options like "1. $38 (via Expedia) - Great budget option!"
-                    const listMatch = line.match(flightListPattern) || line.match(bulletListPattern);
-                    if (listMatch) {
-                        hasFoundFlights = true;
-                        const [_, priceInfo, description] = listMatch;
-                        
-                        const priceParts = priceInfo.match(/(\$\d+)\s*(.*)?/);
-                        let price = priceInfo;
-                        let airline = '';
-                        
-                        if (priceParts) {
-                            price = priceParts[1];
-                            airline = priceParts[2] ? priceParts[2].replace(/[()]/g, '') : '';
-                        }
-                        
-                        flights.push({
-                            title: `Flight Option ${flights.length + 1}`,
-                            price: price,
-                            airline: airline || 'Not specified',
-                            description: description
-                        });
-                    }
-                    
-                    // Also try to detect structured flight sections
                     if (line.startsWith('**Flight Option')) {
-                        hasFoundFlights = true;
-                        let currentFlight = { title: line.replace(/\*\*/g, '') };
-                        let j = i + 1;
-                        
-                        // Collect details for this flight
-                        while (j < lines.length && lines[j].trim() !== '') {
-                            const detailLine = lines[j].trim();
-                            if (detailLine.startsWith('- **')) {
-                                // Extract detail
-                                const detail = detailLine.replace(/- \*\*(.*?):\*\* /g, '$1|').split('|');
-                                if (detail.length > 1) {
-                                    const key = detail[0].toLowerCase().replace(/ /g, '_');
-                                    const value = detail[1].trim();
-                                    currentFlight[key] = value;
-                                }
-                            }
-                            j++;
+                        // Start a new flight card
+                        if (inFlightSection) {
+                            formattedHTML += createFlightCard(currentFlight);
                         }
                         
-                        flights.push(currentFlight);
-                        i = j; // Skip processed lines
+                        currentFlight = { title: line.replace(/\*\*/g, '') };
+                        inFlightSection = true;
+                    } 
+                    else if (inFlightSection && line.startsWith('- **')) {
+                        // Extract detail
+                        const detail = line.replace(/- \*\*(.*?):\*\* /g, '$1|').split('|');
+                        if (detail.length > 1) {
+                            const key = detail[0].toLowerCase().replace(/ /g, '_');
+                            const value = detail[1].trim();
+                            currentFlight[key] = value;
+                        }
+                    }
+                    else if (line === '' && inFlightSection) {
+                        // End of flight section
+                        formattedHTML += createFlightCard(currentFlight);
+                        inFlightSection = false;
+                        currentFlight = {};
                     }
                 }
                 
-                // If airline names are mentioned without structured format, try to extract them
-                if (!hasFoundFlights) {
-                    const airlinePattern = /(Saudia|flyadeal|FlyNas|Saudi Airlines|Flynas|SaudiGulf Airlines)/gi;
-                    const pricePattern = /\$(\d+)/g;
-                    
-                    let prices = [];
-                    let priceMatch;
-                    while ((priceMatch = pricePattern.exec(message)) !== null) {
-                        prices.push(priceMatch[0]);
-                    }
-                    
-                    let airlines = [];
-                    let airlineMatch;
-                    while ((airlineMatch = airlinePattern.exec(message)) !== null) {
-                        airlines.push(airlineMatch[1]);
-                    }
-                    
-                    // Create flight cards from found airlines and prices
-                    for (let i = 0; i < Math.max(airlines.length, prices.length); i++) {
-                        flights.push({
-                            title: `Flight Option ${i + 1}`,
-                            airline: airlines[i] || 'Airline not specified',
-                            price: prices[i] || 'Price not specified'
-                        });
-                    }
+                // Add the last flight if we were processing one
+                if (inFlightSection) {
+                    formattedHTML += createFlightCard(currentFlight);
                 }
                 
-                // Create flight cards
-                flights.forEach(flight => {
-                    formattedHTML += createFlightCard(flight);
-                });
-                
-                // Handle the case where no structured flights were found
-                if (flights.length === 0) {
-                    // Check for 'Flight Options:' text with no actual flights listed
-                    if (message.includes('Flight Options:')) {
-                        // Create a default flight option card
-                        const defaultFlight = {
-                            title: 'Available Flight Options',
-                            description: 'Multiple flights are available for this route. Ask for more details about departure times, prices, or specific airlines.',
-                            airline: 'Various Airlines'
-                        };
-                        
-                        // Try to extract route info
-                        const routeMatch = message.match(/(\w{3})\s+to\s+(\w{3})/);
-                        if (routeMatch) {
-                            defaultFlight.route = `${routeMatch[1]} → ${routeMatch[2]}`;
-                        }
-                        
-                        // Try to extract date info
-                        const dateMatch = message.match(/for (next|this) ([A-Za-z]+), ([A-Za-z]+ \d+, \d{4}|\w+ \d+)/);
-                        if (dateMatch) {
-                            defaultFlight.departure = dateMatch[0].replace('for ', '');
-                        }
-                        
-                        // Duration info
-                        const durationMatch = message.match(/duration is typically ([^\.]*)/);
-                        if (durationMatch) {
-                            defaultFlight.duration = durationMatch[1];
-                        } else {
-                            const altDurationMatch = message.match(/(\d+)\s*hours?\s*(\d+)?\s*minutes?|about\s*(\d+)\s*(hour|minute)s?/);
-                            if (altDurationMatch) {
-                                defaultFlight.duration = altDurationMatch[0];
-                            }
-                        }
-                        
-                        formattedHTML += createFlightCard(defaultFlight);
-                    } else {
-                        // Add a generic flight card with whatever info we can find
-                        const priceMatch = message.match(/\$(\d+)/);
-                        const durationMatch = message.match(/(\d+)\s*hours?\s*(\d+)?\s*minutes?|about\s*(\d+)\s*(hour|minute)s?/);
-                        
-                        if (priceMatch || durationMatch || message.toLowerCase().includes('flight')) {
-                            const genericFlight = {
-                                title: 'Flight Information',
-                                price: priceMatch ? priceMatch[0] : '',
-                                duration: durationMatch ? durationMatch[0] : ''
-                            };
-                            
-                            // See if we can extract origin/destination
-                            const routeMatch = message.match(/(\w{3})\s+to\s+(\w{3})/);
-                            if (routeMatch) {
-                                genericFlight.route = `${routeMatch[1]} → ${routeMatch[2]}`;
-                            }
-                            
-                            formattedHTML += createFlightCard(genericFlight);
-                        }
-                    }
-                }
-                
-                // Format the rest of the message (removing the flight list parts)
-                let remainingText = message;
-                if (flights.length > 0) {
-                    // Remove the flight list parts from the text
-                    const flightListLines = lines.filter(line => {
-                        return line.match(flightListPattern) || 
-                               line.match(bulletListPattern) ||
-                               line.startsWith('**Flight Option');
-                    });
-                    
-                    flightListLines.forEach(line => {
-                        remainingText = remainingText.replace(line, '');
-                    });
-                }
-                
-                // Format the remaining text
-                remainingText = remainingText
+                // Add the remaining text (not in flight cards)
+                const remainingText = lines
+                    .filter(line => !line.startsWith('**Flight Option') && !line.startsWith('- **'))
+                    .join('\n')
                     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                     .replace(/\*(.*?)\*/g, '<em>$1</em>')
                     .replace(/\n\n/g, '</p><p>')
@@ -887,94 +578,19 @@
             function createFlightCard(flight) {
                 if (!flight.title) return '';
                 
-                // Check if this is a full flight card or just info
-                const isFullCard = flight.departure || flight.airline;
-                
-                // Get airport codes for origin and destination
-                let departCode = 'DMM';
-                let arriveCode = 'RUH';
-                
-                if (flight.route) {
-                    const routeParts = flight.route.split(' → ');
-                    if (routeParts.length === 2) {
-                        departCode = routeParts[0];
-                        arriveCode = routeParts[1];
-                    }
-                }
-                
-                // Extract time from departure/arrival if available
-                let departTime = '11:00';
-                let arriveTime = '12:15';
-                
-                if (flight.departure && flight.departure.match(/\d+:\d+/)) {
-                    departTime = flight.departure.match(/\d+:\d+/)[0];
-                }
-                
-                if (flight.arrival && flight.arrival.match(/\d+:\d+/)) {
-                    arriveTime = flight.arrival.match(/\d+:\d+/)[0];
-                }
-                
-                // Format duration
-                let durationText = flight.duration || '1h 15m';
-                if (durationText.includes('hour')) {
-                    durationText = durationText.replace('hours', 'h').replace('hour', 'h');
-                    if (durationText.includes('minute')) {
-                        durationText = durationText.replace('minutes', 'm').replace('minute', 'm');
-                    }
-                }
-                
-                // Format flight number
-                let flightNumber = '';
-                if (flight.title && flight.title.match(/[A-Z]{2}\d+/)) {
-                    flightNumber = flight.title.match(/[A-Z]{2}\d+/)[0];
-                }
-                
-                // Format airline name for the logo
-                let airlineName = flight.airline || 'Airline';
-                let airlineShort = airlineName.split(' ')[0];
-                if (airlineShort.length > 3) {
-                    airlineShort = airlineShort.substring(0, 3);
-                }
-                
-                // Format pricing
-                const price = flight.price || 'SAR 218';
-                const formattedPrice = price.includes('SAR') ? price : price.includes('$') ? 'SAR ' + (parseInt(price.replace('$', '')) * 3.75).toFixed(0) : price;
-                
-                // Determine if it's an eco-friendly flight (random for demo)
-                const isEco = Math.random() > 0.5;
-                
                 return `
-                    ${isEco ? `<div class="eco-info">
-                        <span>This flight emits 18% less CO<sub>2</sub>e than a typical flight on this route</span>
-                        <span class="eco-info-icon">i</span>
-                    </div>` : ''}
                     <div class="flight-card">
-                        <button class="favorite-button">♡</button>
-                        <div class="flight-card-content">
-                            <div class="airline-logo">${airlineShort}</div>
-                            <div class="flight-info">
-                                <div class="flight-route">
-                                    <div>
-                                        <div class="flight-time">${departTime}</div>
-                                        <div class="flight-airport">${departCode}</div>
-                                    </div>
-                                    <div class="flight-duration">
-                                        <div>${durationText}</div>
-                                        <div class="flight-line"></div>
-                                        <div class="flight-type">Direct</div>
-                                    </div>
-                                    <div>
-                                        <div class="flight-time">${arriveTime}</div>
-                                        <div class="flight-airport">${arriveCode}</div>
-                                    </div>
-                                </div>
-                                ${flight.description ? `<div class="card-description">${flight.description}</div>` : ''}
-                            </div>
+                        <div class="card-header">
+                            <div class="card-title">${flight.title}</div>
+                            ${flight.price ? `<div class="card-price">${flight.price}</div>` : ''}
                         </div>
-                        <div class="flight-price-container">
-                            <div class="flight-deals">17 deals from</div>
-                            <div class="flight-price">${formattedPrice}</div>
-                            <button class="select-button">Select</button>
+                        <div class="flight-details">
+                            ${flight.airline ? `<div class="detail-item">${flight.airline}</div>` : ''}
+                            ${flight.departure ? `<div class="detail-item">${flight.departure}</div>` : ''}
+                            ${flight.arrival ? `<div class="detail-item">${flight.arrival}</div>` : ''}
+                            ${flight.duration ? `<div class="detail-item">${flight.duration}</div>` : ''}
+                            ${flight.stops ? `<div class="detail-item">${flight.stops} stops</div>` : ''}
+                            ${flight.class ? `<div class="detail-item highlight">${flight.class}</div>` : ''}
                         </div>
                     </div>
                 `;
@@ -1061,15 +677,6 @@
                     // Clear chat container except for the welcome message
                     while (chatContainer.childNodes.length > 1) {
                         chatContainer.removeChild(chatContainer.lastChild);
-                    }
-                    
-                    // Update the session ID if a new one is provided
-                    if (data.new_session_id) {
-                        currentSessionId = data.new_session_id;
-                        console.log('Conversation reset. New session ID:', currentSessionId);
-                    } else {
-                        // If no new session ID is provided, clear the current one
-                        currentSessionId = null;
                     }
                 })
                 .catch(error => {

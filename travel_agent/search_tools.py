@@ -193,11 +193,35 @@ class SearchToolManager:
         Returns:
             Search results for hotels
         """
+        # Map common airport codes to city names for better search results
+        airport_to_city = {
+            "BKK": "Bangkok",
+            "DMM": "Dammam",
+            "JED": "Jeddah",
+            "RUH": "Riyadh",
+            "DXB": "Dubai",
+            "AUH": "Abu Dhabi",
+            "DOH": "Doha",
+            "CAI": "Cairo",
+            "NYC": "New York City",
+            "LAX": "Los Angeles",
+            "LHR": "London",
+            "CDG": "Paris"
+        }
+        
+        # Check if the location is an airport code and map to city if needed
+        search_location = location
+        if location.upper() in airport_to_city:
+            search_location = airport_to_city[location.upper()]
+            logger.info(f"Mapped airport code {location} to city {search_location} for hotel search")
+        
         # Construct a query string that's likely to return relevant hotel results
-        query_parts = [f"best hotels in {location}"]
+        query_parts = [f"best hotels in {search_location}"]
         
         if check_in and check_out:
             query_parts.append(f"from {check_in} to {check_out}")
+        elif check_in:  # If only check-in is provided (common for "tomorrow" queries)
+            query_parts.append(f"available on {check_in}")
         
         if num_people > 1:
             query_parts.append(f"for {num_people} people")
@@ -214,7 +238,8 @@ class SearchToolManager:
     
     def search_flights(self, origin: str, destination: str, 
                       departure_date: Optional[str] = None, 
-                      return_date: Optional[str] = None) -> Dict[str, Any]:
+                      return_date: Optional[str] = None,
+                      time_preference: Optional[str] = None) -> Dict[str, Any]:
         """
         Search for flights between locations.
         
@@ -223,6 +248,7 @@ class SearchToolManager:
             destination: Destination location
             departure_date: Departure date (optional)
             return_date: Return date (optional)
+            time_preference: Time of day preference (e.g., 'morning', 'afternoon', 'evening')
             
         Returns:
             Search results for flights
@@ -236,13 +262,26 @@ class SearchToolManager:
             if return_date:
                 query_parts.append(f"return {return_date}")
         
+        # Add time preference if provided
+        if time_preference:
+            query_parts.append(f"{time_preference} flights")
+        
         query = " ".join(query_parts)
         
         # Use organic search for flight results
-        results = self.search(query, search_type='organic')
+        results = self.search(query, search_type='organic', num_results=10)  # Increased to get more options
         
         # Process and structure flight results
         processed_results = self._process_flight_results(results, origin, destination)
+        
+        # Add search parameters to metadata
+        processed_results['_query_params'] = {
+            'origin': origin,
+            'destination': destination,
+            'departure_date': departure_date,
+            'return_date': return_date,
+            'time_preference': time_preference
+        }
         
         return processed_results
     
@@ -366,16 +405,21 @@ class SearchToolManager:
             'origin': origin,
             'destination': destination,
             'flights': [],
+            'flight_times': [],
+            'airlines': [],
+            'prices': {},
             'providers': []
         }
         
         # Extract organic results if available
         if 'organic' in results:
             # Process flight options
-            for item in results['organic'][:5]:  # Limit to top 5 results
+            for item in results['organic'][:10]:  # Increased limit to get more options
                 # Skip results that don't seem flight-related
                 title = item.get('title', '').lower()
-                if not any(kw in title for kw in ['flight', 'air', 'book', 'cheap']):
+                snippet = item.get('snippet', '').lower()
+                
+                if not any(kw in title for kw in ['flight', 'air', 'book', 'cheap', 'ticket']):
                     continue
                     
                 flight = {
@@ -385,17 +429,60 @@ class SearchToolManager:
                     'source': self._extract_domain(item.get('link', '')),
                 }
                 
+                # Extract departure times if available
+                times = self._extract_flight_times(title, snippet)
+                if times:
+                    flight['departure_time'] = times.get('departure')
+                    flight['arrival_time'] = times.get('arrival')
+                
+                # Extract airline if available
+                airline = self._extract_airline(title, snippet)
+                if airline:
+                    flight['airline'] = airline
+                    if airline not in processed['airlines']:
+                        processed['airlines'].append(airline)
+                
+                # Extract flight number if available
+                flight_number = self._extract_flight_number(title, snippet)
+                if flight_number:
+                    flight['flight_number'] = flight_number
+                
+                # Extract duration if available
+                duration = self._extract_duration(title, snippet)
+                if duration:
+                    flight['duration'] = duration
+                
+                # Extract price if available
+                price = self._extract_price(title, snippet)
+                if price:
+                    flight['price'] = price
+                    
                 processed['flights'].append(flight)
+                
+                # Add to flight_times if we have departure info
+                if times and times.get('departure'):
+                    time_info = {
+                        'departure': times.get('departure'),
+                        'arrival': times.get('arrival'),
+                        'airline': airline,
+                        'flight_number': flight_number
+                    }
+                    processed['flight_times'].append(time_info)
             
             # Extract flight booking providers
             providers = set()
             for item in results['organic']:
                 domain = self._extract_domain(item.get('link', ''))
                 if domain and any(kw in domain for kw in ['expedia', 'kayak', 'booking', 'skyscanner', 
-                                                         'trip', 'flight', 'air']):
+                                                         'trip', 'flight', 'air', 'airlines']):
                     providers.add(domain)
             
             processed['providers'] = list(providers)
+            
+            # Extract price information from specific sites
+            price_info = self._extract_price_info(results['organic'])
+            if price_info:
+                processed['prices'] = price_info
         
         return processed
     
@@ -496,3 +583,204 @@ class SearchToolManager:
                 return domain
             except:
                 return ""
+    
+    def _extract_flight_times(self, title: str, description: str) -> Dict[str, str]:
+        """Extract departure and arrival times from flight information."""
+        import re
+        times = {}
+        
+        # Combined text to search through
+        text = f"{title} {description}".lower()
+        
+        # Common time patterns (both 12h and 24h formats)
+        time_patterns = [
+            r'depart\w*\s+(?:at\s+)?(\d{1,2}:\d{2}\s*(?:am|pm)?)',  # departs at 10:30am
+            r'departure\s+(?:at\s+)?(\d{1,2}:\d{2}\s*(?:am|pm)?)',    # departure at 10:30am
+            r'leaves?\s+(?:at\s+)?(\d{1,2}:\d{2}\s*(?:am|pm)?)',     # leaves at 10:30am
+            r'(\d{1,2}:\d{2}\s*(?:am|pm)?)\s+to\s+(\d{1,2}:\d{2}\s*(?:am|pm)?)',  # 10:30am to 12:45pm
+            r'(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*[-–—]\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm))'  # 10:30am-12:45pm
+        ]
+        
+        # Look for departure time
+        for pattern in time_patterns:
+            matches = re.search(pattern, text, re.IGNORECASE)
+            if matches:
+                if len(matches.groups()) == 1:
+                    times['departure'] = matches.group(1).strip()
+                elif len(matches.groups()) == 2:
+                    times['departure'] = matches.group(1).strip()
+                    times['arrival'] = matches.group(2).strip()
+                break
+        
+        # Look for morning/afternoon/evening specifications if no specific time
+        if not times:
+            if 'morning' in text:
+                times['departure'] = 'morning flight'
+            elif 'afternoon' in text:
+                times['departure'] = 'afternoon flight'
+            elif 'evening' in text or 'night' in text:
+                times['departure'] = 'evening flight'
+        
+        return times
+    
+    def _extract_airline(self, title: str, description: str) -> Optional[str]:
+        """Extract airline name from flight information."""
+        # Common airlines to look for
+        airlines = [
+            'Emirates', 'Qatar Airways', 'Etihad', 'Saudia', 'Flynas', 'Flyadeal',
+            'Turkish Airlines', 'Pegasus', 'EgyptAir', 'Air Arabia', 'Gulf Air',
+            'Royal Jordanian', 'Middle East Airlines', 'Oman Air', 'Kuwait Airways',
+            'American', 'Delta', 'United', 'Southwest', 'JetBlue', 'British Airways',
+            'Lufthansa', 'Air France', 'KLM', 'Iberia', 'Ryanair', 'easyJet',
+            'Air Canada', 'Singapore Airlines', 'Cathay Pacific', 'ANA', 'JAL'
+        ]
+        
+        # Combined text to search through
+        text = f"{title} {description}"
+        
+        # Check for each airline
+        for airline in airlines:
+            if airline.lower() in text.lower():
+                return airline
+            # Check for abbreviations
+            abbr = ''.join([word[0] for word in airline.split() if word])
+            if len(abbr) > 1 and abbr.upper() in text.upper():
+                return airline
+        
+        return None
+    
+    def _extract_flight_number(self, title: str, description: str) -> Optional[str]:
+        """Extract flight number from flight information."""
+        import re
+        
+        # Combined text to search through
+        text = f"{title} {description}"
+        
+        # Common flight number patterns
+        patterns = [
+            r'flight\s+(?:number\s+)?([A-Z]{2}\d{1,4})',  # Flight EK123
+            r'([A-Z]{2})\s*(\d{1,4})\s+flight',           # EK 123 flight
+            r'flight\s+(?:number\s+)?(\d{1,4})'           # Flight 123
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                # Handle different group configurations
+                if len(match.groups()) == 1:
+                    return match.group(1).strip()
+                elif len(match.groups()) == 2:
+                    return f"{match.group(1)}{match.group(2)}".strip()
+        
+        return None
+    
+    def _extract_duration(self, title: str, description: str) -> Optional[str]:
+        """Extract flight duration from flight information."""
+        import re
+        
+        # Combined text to search through
+        text = f"{title} {description}".lower()
+        
+        # Duration patterns
+        patterns = [
+            r'(?:flight|duration|time)\s+(?:of\s+)?(\d+\s*h(?:ours?)?(?:\s*and\s*|\s*)?\d*\s*m(?:inutes?)?)',  # flight time of 2h 30m
+            r'(\d+\s*h(?:ours?)?(?:\s*and\s*|\s*)?\d*\s*m(?:inutes?)?)\s+(?:flight|duration|time)',  # 2h 30m flight time
+            r'(\d+\s*hours?(?:\s*and\s*|\s*)?\d*\s*minutes?)',  # 2 hours and 30 minutes
+            r'(?:takes|duration|time)\s+(?:of\s+)?(\d+:\d{2})'  # takes 2:30
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                return match.group(1).strip()
+        
+        return None
+    
+    def _extract_price(self, title: str, description: str) -> Optional[str]:
+        """Extract price information from flight details."""
+        import re
+        
+        # Combined text to search through
+        text = f"{title} {description}".lower()
+        
+        # Price patterns
+        patterns = [
+            r'\$\s*(\d+(?:,\d+)*(?:\.\d+)?)',  # $123 or $1,234.56
+            r'(\d+(?:,\d+)*(?:\.\d+)?)\s*usd',  # 123 USD or 1,234.56 USD
+            r'(?:price|cost|fare)\s*(?:from|:)?\s*\$\s*(\d+(?:,\d+)*(?:\.\d+)?)',  # price from $123
+            r'(?:price|cost|fare)\s*(?:from|:)?\s*(\d+(?:,\d+)*(?:\.\d+)?)\s*usd',  # price from 123 USD
+            r'(?:price|cost|fare)\s*(?:from|:)?\s*(?:USD|\$)?\s*(\d+(?:,\d+)*(?:\.\d+)?)'  # price from 123
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                price = match.group(1).strip()
+                return f"${price}" if not price.startswith('$') else price
+        
+        return None
+    
+    def _extract_price_info(self, organic_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Extract detailed price information from search results."""
+        price_info = {
+            'lowest_price': None,
+            'one_way': None,
+            'round_trip': None,
+            'by_provider': {}
+        }
+        
+        for item in organic_results:
+            title = item.get('title', '').lower()
+            snippet = item.get('snippet', '').lower()
+            text = f"{title} {snippet}"
+            
+            # Skip non-price related entries
+            if not any(term in text for term in ['price', 'cost', '$', 'usd', 'fare']):
+                continue
+                
+            # Extract provider
+            provider = self._extract_domain(item.get('link', ''))
+            
+            # Extract price with context
+            import re
+            price_matches = re.findall(r'\$\s*(\d+(?:,\d+)*(?:\.\d+)?)', text)
+            
+            if price_matches:
+                # Convert first found price to float for comparison
+                try:
+                    price_value = float(price_matches[0].replace(',', ''))
+                    
+                    # Update lowest price if this is the first or a lower price
+                    if price_info['lowest_price'] is None or price_value < price_info['lowest_price']:
+                        price_info['lowest_price'] = price_value
+                    
+                    # Check context for one-way vs round-trip
+                    if 'one way' in text or 'one-way' in text:
+                        if price_info['one_way'] is None or price_value < price_info['one_way']:
+                            price_info['one_way'] = price_value
+                    elif 'round trip' in text or 'round-trip' in text or 'return' in text:
+                        if price_info['round_trip'] is None or price_value < price_info['round_trip']:
+                            price_info['round_trip'] = price_value
+                    
+                    # Add to provider-specific pricing
+                    if provider:
+                        if provider not in price_info['by_provider']:
+                            price_info['by_provider'][provider] = price_value
+                        elif price_value < price_info['by_provider'][provider]:
+                            price_info['by_provider'][provider] = price_value
+                            
+                except ValueError:
+                    pass  # Skip if price can't be converted to float
+        
+        # Convert all prices back to formatted strings
+        if price_info['lowest_price'] is not None:
+            price_info['lowest_price'] = f"${price_info['lowest_price']:.2f}"
+        if price_info['one_way'] is not None:
+            price_info['one_way'] = f"${price_info['one_way']:.2f}"
+        if price_info['round_trip'] is not None:
+            price_info['round_trip'] = f"${price_info['round_trip']:.2f}"
+            
+        for provider in price_info['by_provider']:
+            price_info['by_provider'][provider] = f"${price_info['by_provider'][provider]:.2f}"
+        
+        return price_info

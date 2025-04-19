@@ -1,0 +1,103 @@
+name: Travel Agent CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        pip install pytest pytest-cov flake8
+    
+    - name: Create .env file
+      run: |
+        echo "FLASK_SECRET_KEY=${{ secrets.FLASK_SECRET_KEY || 'dev-secret-key' }}" > .env
+        echo "REDIS_URL=redis://localhost:6379/0" >> .env
+        echo "DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY || 'dummy-api-key' }}" >> .env
+        echo "SERPER_API_KEY=${{ secrets.SERPER_API_KEY || 'dummy-api-key' }}" >> .env
+        echo "GROQ_API_KEY=${{ secrets.GROQ_API_KEY || 'dummy-api-key' }}" >> .env
+    
+    - name: Lint with flake8
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    
+    - name: Run unit tests
+      run: |
+        pytest tests/unit -v
+    
+    - name: Run integration tests
+      run: |
+        pytest tests/integration -v
+      env:
+        USE_MOCK_LLM: "false"
+        USE_MOCK_SEARCH: "false"
+    
+    - name: Generate test coverage report
+      run: |
+        pytest --cov=travel_agent tests/ --cov-report=xml
+    
+    - name: Upload coverage report
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
+
+  deploy:
+    needs: test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Create deployment artifact
+        run: |
+          pip install -r requirements.txt
+          mkdir -p deployment
+          cp -r travel_agent deployment/
+          cp -r templates deployment/
+          cp app.py deployment/
+          cp requirements.txt deployment/
+          echo "App packaged for deployment"
+      
+      - name: Archive deployment artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: app-deployment
+          path: deployment/
+          retention-days: 5

@@ -10,7 +10,10 @@ from uuid import uuid4
 
 from langgraph.graph import StateGraph
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.checkpoint.redis import RedisSaver
+try:
+    from langgraph.checkpoint.redis import RedisSaver
+except ImportError:
+    RedisSaver = None
 
 from travel_agent.state_definitions import TravelState, ConversationStage
 from travel_agent.agents.conversation_manager import ConversationManager
@@ -45,7 +48,7 @@ class EnhancedTravelAgentGraph:
         self.response_generator = ResponseGenerator()
         
         # Initialize state persistence
-        if use_redis and os.getenv("REDIS_URL"):
+        if use_redis and os.getenv("REDIS_URL") and RedisSaver is not None:
             redis_manager = RedisManager()
             self.state_saver = RedisSaver(
                 redis_url=os.getenv("REDIS_URL", "redis://localhost:6379"),

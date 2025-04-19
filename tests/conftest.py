@@ -4,6 +4,8 @@ Implements best practices for test organization and mocking external services.
 """
 
 import os
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import pytest
 import json
 from datetime import date, timedelta

@@ -9,13 +9,23 @@ An intelligent conversational travel agent that helps users plan trips through n
 - **Real-time Travel Data** - Uses Google Search API with efficient caching for up-to-date information
 - **Multiple LLM Support** - Primary: DeepSeek with Groq fallback, optimized client initialization
 - **Stateful Conversation** - Maintains context throughout the planning process with LangGraph
-- **Error Recovery** - Robust error tracking and fallback mechanisms
+- **Enhanced Security** - Comprehensive input validation, rate limiting, and session protection
+- **Error Recovery** - Robust error tracking with unique IDs, fallback mechanisms, and monitoring dashboard
+- **Modern UI** - Card-based displays for flight and hotel search results
+
+## 🖥️ User Interface
+
+The Travel Agent features a clean, modern web interface that makes travel planning intuitive and enjoyable:
+
+![Travel Agent User Interface](travel_agent_ui.png)
+
+*The interface includes a chat area that maintains conversation history, a message input box, and a send button for submitting queries. Search results for flights and hotels are displayed with structured information in an easily readable format.*
 
 ## 🛠️ Technologies
 
 ### AI & Machine Learning
-- **Primary LLM**: DeepSeek Coder v2 (via OpenAI SDK compatibility layer)
-- **Fallback LLM**: Groq (llama3-70b-8192) (via OpenAI SDK compatibility layer)
+- **Primary LLM**: DeepSeek-Chat (V3) (via OpenAI SDK compatibility layer)
+- **Fallback LLM**: OpenAI (gpt-4-turbo-preview) (optional)
 - **LLM Integration**: OpenAI SDK v1.5.0 with optimized client initialization
 - **Agent Orchestration**: LangGraph v0.0.38 with state persistence
 
@@ -24,7 +34,7 @@ An intelligent conversational travel agent that helps users plan trips through n
 - **Web Framework**: Flask with CORS support
 - **State Management**: Redis with enhanced JSON serialization
 - **APIs**: Google Serper API with tiered caching and retry logic
-- **Error Tracking**: Centralized error tracking system with unique IDs
+- **Error Tracking**: Comprehensive error handling system with unique IDs, fallbacks, and monitoring dashboard
 
 ### Frontend
 - **Core**: Vanilla JavaScript
@@ -69,32 +79,46 @@ redis-server
 
 # Terminal 2: Start Flask app
 source venv/bin/activate
-FLASK_ENV=development python app.py
+FLASK_ENV=development python app.py --port=5001
+# OR
+python -m flask run --host=0.0.0.0 --port=5001
 
-# Access in browser at http://localhost:5000
+# Access in browser at http://localhost:5001
 ```
+
+> **Note**: We use port 5001 instead of 5000 because newer versions of macOS use port 5000 for the AirPlay Receiver service, which can cause conflicts.
 
 ## 🧪 Development Plan
 
-### Phase 1: Core Backend Components
+### Phase 1: Core Backend Components ✅
 - Implement state definitions
 - Set up LLM providers (DeepSeek/Groq via OpenAI SDK)
 - Create search tools
 
-### Phase 2: Agent Implementation
+### Phase 2: Agent Implementation ✅
 - Build individual agents
 - Integrate with LangGraph
 - Test agent communication
 
-### Phase 3: API and Redis Integration
+### Phase 3: API and Redis Integration ✅
 - Set up Flask endpoints
 - Integrate Redis for state management
 - Test API functionality
 
-### Phase 4: Frontend Development
+### Phase 4: Frontend Development ✅
 - Create HTML/CSS interface
 - Implement JavaScript interactivity
 - Connect to backend API
+
+### Phase 5: Security Enhancements ✅
+- Implement input validation and sanitization
+- Add rate limiting
+- Enhance session security
+
+### Phase 6: Error Handling Improvements ✅
+- Extend centralized error tracking with unique IDs
+- Implement robust fallback mechanisms
+- Add comprehensive logging and monitoring dashboard
 
 ## 🧩 System Architecture
 
@@ -131,6 +155,8 @@ SM: Search Manager         RG: Response Generator
 
 ## 📝 Testing
 
+> **All tests are currently passing** ✅ - The codebase has been thoroughly tested with unit tests for all components including security, error handling, and rate limiting.
+
 | Component | Verification Method | Success Criteria |
 |-----------|---------------------|------------------|
 | State Definitions | Unit tests | Models can be instantiated with valid data |
@@ -139,6 +165,9 @@ SM: Search Manager         RG: Response Generator
 | Search Tools | Cached integration tests | Search queries return expected structure with efficient caching |
 | Agent Logic | Unit & integration tests | Agents produce expected outputs and handle edge cases |
 | API Endpoints | API tests | Endpoints return expected status codes and data |
+| Input Validation | Unit tests | Validates and sanitizes all user inputs correctly |
+| Error Handling | Unit tests | Properly tracks errors and implements fallback mechanisms |
+| Rate Limiting | Unit tests | Correctly limits request rates and handles exceeded limits |
 
 The project includes specific test scripts for validating flight and hotel searches, with particular attention to the DMM to BKK route and tomorrow date extraction.
 
@@ -192,10 +221,53 @@ curl -X POST -H "Content-Type: application/json" -d '{"message":"Find flights fr
 
 ## 🔒 Security
 
-- Environment variables for API keys
-- Input validation and sanitization
-- Rate limiting implementation
-- Session-based storage with Redis
+### API Key Protection
+- Environment variables for all API keys with `.env` file support
+- Automatic redaction of sensitive information in logs
+
+### Input Validation & Sanitization
+- Pattern-based validation using regex for all user inputs
+- HTML escaping to prevent XSS attacks
+- Length limits to prevent buffer overflow attacks
+- Specific validators for session IDs, messages, and other input types
+
+### Rate Limiting
+- Redis-backed rate limiting to prevent abuse
+- Multiple limit types: IP-based, endpoint-specific, and global
+- Configurable limits for different endpoints
+- Proper HTTP headers to inform clients about rate limit status
+
+### Session Security
+- Enhanced Redis-based session storage with proper expiration
+- Token rotation for improved security against session hijacking
+- Session validation decorators for Flask routes
+- IP address and user agent tracking to detect suspicious activities
+
+## 🚨 Error Handling System
+
+### Enhanced Error Tracking
+- **Unique Error IDs**: Every error generates a traceable, human-readable ID (e.g., `E-LLM-1A2B3C-1650389914`)
+- **Structured Logging**: JSON-formatted error context with comprehensive metadata
+- **Error Classification**: Custom exception hierarchy for different components (LLM, Search, Redis, etc.)
+- **Severity Levels**: Proper categorization with CRITICAL, ERROR, WARNING, INFO, DEBUG levels
+
+### Robust Fallback Mechanisms
+- **LLM Fallbacks**: Degraded but functional responses when LLM services are unavailable
+- **Search Fallbacks**: Static or cached results when search APIs fail
+- **Redis Fallbacks**: File-based temporary storage when Redis is down
+- **Comprehensive Retry Logic**: Exponential backoff with configurable parameters
+
+### Monitoring Dashboard
+- **Real-time Status**: Component-by-component health visualization
+- **Error Trends**: 24-hour error frequency charts by component
+- **Recent Errors**: Detailed view of latest errors with context
+- **Health Check API**: Endpoint for external monitoring systems
+
+### Developer-Friendly Integration
+- **Decorator-Based Implementation**: Simple `@with_fallback` and `@retry_with_fallback` decorators
+- **Centralized Monitoring**: Single dashboard for all system components
+- **Consistent Error Responses**: Standardized error format across all API endpoints
+- **Automatic Recovery**: Self-healing capabilities for temporary issues
 
 ## 🔧 Technical Notes
 
