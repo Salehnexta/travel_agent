@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Travel Assistant</title>
+    <style>
+        :root {
+            --sidebar-width: 260px;
+            --primary-color: #10a37f;
+            --background-color: #f7f7f8;
+            --chat-bg: #ffffff;
+            --sidebar-bg: #ffffff;
+            --text-color: #343541;
+            --border-color: #e5e5e5;
+            --bubble-user: #f7f7f8;
+            --bubble-assistant: #f0f4f9;
+            --input-bg: #ffffff;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* Sidebar styles */
+        .sidebar {
+            width: var(--sidebar-width);
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            height: 100vh;
+            overflow-y: auto;
+            padding: 15px 0;
+            flex-shrink: 0;
+        }
+
+        .sidebar-header {
+            padding: 10px 15px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 15px;
+        }
+
+        .sidebar-title {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .sidebar-nav {
+            padding: 0 10px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-bottom: 5px;
+            transition: background-color 0.2s;
+        }
+
+        .nav-item:hover {
+            background-color: rgba(0, 0, 0, 0.05);
+        }
+
+        .nav-item.active {
+            background-color: rgba(16, 163, 127, 0.1);
+            color: var(--primary-color);
+        }
+
+        /* Main chat area */
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background-color: var(--chat-bg);
+            position: relative;
+        }
+
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 0;
+            display: flex;
+            flex-direction: column;
+            max-width: 800px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .chat-welcome {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            text-align: center;
+            padding: 0 20px;
+        }
+
+        .welcome-title {
+            font-size: 32px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+
+        .chat-messages {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+        }
+
+        .message {
+            display: flex;
+            padding: 20px;
+            margin-bottom: 10px;
+        }
+
+        .message-user {
+            background-color: var(--bubble-user);
+            justify-content: flex-end;
+        }
+
+        .message-assistant {
+            background-color: var(--bubble-assistant);
+        }
+
+        .message-content {
+            max-width: 80%;
+            line-height: 1.5;
+        }
+
+        /* Input area */
+        .input-container {
+            border-top: 1px solid var(--border-color);
+            padding: 15px;
+            background-color: var(--chat-bg);
+            position: sticky;
+            bottom: 0;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+        }
+
+        .input-wrapper {
+            max-width: 800px;
+            width: 100%;
+            position: relative;
+        }
+
+        .chat-input {
+            width: 100%;
+            padding: 12px 50px 12px 15px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background-color: var(--input-bg);
+            font-size: 16px;
+            resize: none;
+            outline: none;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+            overflow-y: auto;
+            max-height: 200px;
+            min-height: 24px;
+        }
+
+        .send-button {
+            position: absolute;
+            right: 10px;
+            bottom: 10px;
+            background-color: transparent;
+            border: none;
+            cursor: pointer;
+            color: var(--primary-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            border-radius: 4px;
+        }
+
+        .send-button:hover {
+            background-color: rgba(16, 163, 127, 0.1);
+        }
+
+        /* Flight results styling */
+        .flight-results {
+            margin-top: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .flight-header {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 10px 15px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .flight-details {
+            padding: 15px;
+            background-color: white;
+        }
+
+        .flight-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
+        }
+
+        .flight-card {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .flight-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        .flight-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            background-color: #f8f9fa;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .flight-card-airline {
+            font-weight: 600;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .flight-card-airline img {
+            width: 24px;
+            height: 24px;
+            object-fit: contain;
+        }
+
+        .flight-card-body {
+            padding: 15px;
+        }
+
+        .flight-card-route {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .flight-card-city {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .flight-card-code {
+            font-size: 14px;
+            color: #666;
+            margin-top: 2px;
+        }
+
+        .flight-card-arrow {
+            flex: 1;
+            height: 2px;
+            background-color: #ddd;
+            position: relative;
+            margin: 0 15px;
+        }
+
+        .flight-card-arrow:after {
+            content: '';
+            position: absolute;
+            right: -5px;
+            top: -4px;
+            width: 10px;
+            height: 10px;
+            border-top: 2px solid #ddd;
+            border-right: 2px solid #ddd;
+            transform: rotate(45deg);
+        }
+
+        .flight-card-details {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .flight-card-time {
+            text-align: center;
+        }
+
+        .flight-card-duration {
+            text-align: center;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .flight-card-time-value {
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .flight-card-time-label {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .flight-card-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .flight-card-aircraft {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .flight-card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            background-color: #f8f9fa;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .flight-card-price {
+            font-weight: 700;
+            font-size: 18px;
+            color: var(--primary-color);
+        }
+
+        .flight-card-class {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .flight-card-class-economy {
+            background-color: #d1e7dd;
+            color: #0f5132;
+        }
+
+        .flight-card-class-business {
+            background-color: #cfe2ff;
+            color: #084298;
+        }
+
+        .flight-card-class-first {
+            background-color: #f8d7da;
+            color: #842029;
+        }
+
+        .flight-card-class-premium {
+            background-color: #e2e3e5;
+            color: #41464b;
+        }
+
+        .collapsed {
+            display: none;
+        }
+
+        /* Loading indicator */
+        .typing-indicator {
+            display: flex;
+            align-items: center;
+            padding: 10px 20px;
+        }
+
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #888;
+            border-radius: 50%;
+            margin-right: 4px;
+            animation: typing-animation 1.5s infinite ease-in-out;
+        }
+
+        .typing-dot:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-dot:nth-child(3) {
+            animation-delay: 0.4s;
+            margin-right: 0;
+        }
+
+        @keyframes typing-animation {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-5px); }
+        }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-title">AI Travel Assistant</div>
+        </div>
+        <div class="sidebar-nav">
+            <div class="nav-item active">
+                <span>New Chat</span>
+            </div>
+            <div class="nav-item">
+                <span>Flight Search</span>
+            </div>
+            <div class="nav-item">
+                <span>Hotel Search</span>
+            </div>
+            <div class="nav-item">
+                <span>Travel Tips</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main chat area -->
+    <div class="main">
+        <div class="chat-container" id="chatContainer">
+            <div class="chat-welcome" id="welcomeScreen">
+                <h1 class="welcome-title">What can I help with?</h1>
+            </div>
+            <div class="chat-messages" id="chatMessages" style="display: none;">
+                <!-- Messages will be added here dynamically -->
+            </div>
+        </div>
+
+        <!-- Input area -->
+        <div class="input-container">
+            <div class="input-wrapper">
+                <input type="text" id="chatInput" class="chat-input" placeholder="Ask anything..." autocomplete="off">
+                <button id="sendButton" class="send-button">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M22 2L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM elements
+        const chatContainer = document.getElementById('chatContainer');
+        const welcomeScreen = document.getElementById('welcomeScreen');
+        const chatMessages = document.getElementById('chatMessages');
+        const chatInput = document.getElementById('chatInput');
+        const sendButton = document.getElementById('sendButton');
+
+        // Chat history
+        let chatHistory = [];
+
+        // Function to add a message to the chat
+        function addMessage(role, content, flightData = null, rawResults = null) {
+            // Hide welcome screen and show chat messages
+            welcomeScreen.style.display = 'none';
+            chatMessages.style.display = 'flex';
+
+            // Create message element
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message message-${role}`;
+
+            // Create message content
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+
+            // Add text content
+            const textDiv = document.createElement('div');
+            textDiv.textContent = content;
+            contentDiv.appendChild(textDiv);
+
+            // If there's flight data, add it
+            if (flightData && flightData.length > 0) {
+                const flightResultsDiv = document.createElement('div');
+                flightResultsDiv.className = 'flight-results';
+
+                // Create header
+                const headerDiv = document.createElement('div');
+                headerDiv.className = 'flight-header';
+                headerDiv.textContent = 'Flight Results';
+                headerDiv.innerHTML = 'Flight Results <span>▼</span>';
+                headerDiv.onclick = function() {
+                    const detailsDiv = this.nextElementSibling;
+                    detailsDiv.classList.toggle('collapsed');
+                    this.querySelector('span').textContent = detailsDiv.classList.contains('collapsed') ? '▶' : '▼';
+                };
+                flightResultsDiv.appendChild(headerDiv);
+
+                // Create details container
+                const detailsDiv = document.createElement('div');
+                detailsDiv.className = 'flight-details';
+
+                // Create flight cards container
+                const flightCardsDiv = document.createElement('div');
+                flightCardsDiv.className = 'flight-cards';
+                detailsDiv.appendChild(flightCardsDiv);
+                
+                // Add each flight as a card
+                flightData.forEach(flight => {
+                    const flightCard = document.createElement('div');
+                    flightCard.className = 'flight-card';
+                    
+                    // Card header with airline info
+                    const cardHeader = document.createElement('div');
+                    cardHeader.className = 'flight-card-header';
+                    
+                    const airlineDiv = document.createElement('div');
+                    airlineDiv.className = 'flight-card-airline';
+                    airlineDiv.textContent = flight.airline || 'Airline';
+                    cardHeader.appendChild(airlineDiv);
+                    
+                    // Flight number if available
+                    if (flight.flight_number) {
+                        const flightNumberDiv = document.createElement('div');
+                        flightNumberDiv.textContent = flight.flight_number;
+                        cardHeader.appendChild(flightNumberDiv);
+                    }
+                    
+                    flightCard.appendChild(cardHeader);
+                    
+                    // Card body
+                    const cardBody = document.createElement('div');
+                    cardBody.className = 'flight-card-body';
+                    
+                    // Route information with arrow
+                    const routeDiv = document.createElement('div');
+                    routeDiv.className = 'flight-card-route';
+                    
+                    // Origin
+                    const originDiv = document.createElement('div');
+                    const originCity = document.createElement('div');
+                    originCity.className = 'flight-card-city';
+                    originCity.textContent = flight.origin || 'Origin';
+                    originDiv.appendChild(originCity);
+                    
+                    // Add origin airport code if available
+                    if (flight.origin_code) {
+                        const originCode = document.createElement('div');
+                        originCode.className = 'flight-card-code';
+                        originCode.textContent = flight.origin_code;
+                        originDiv.appendChild(originCode);
+                    }
+                    routeDiv.appendChild(originDiv);
+                    
+                    // Arrow
+                    const arrowDiv = document.createElement('div');
+                    arrowDiv.className = 'flight-card-arrow';
+                    routeDiv.appendChild(arrowDiv);
+                    
+                    // Destination
+                    const destDiv = document.createElement('div');
+                    const destCity = document.createElement('div');
+                    destCity.className = 'flight-card-city';
+                    destCity.textContent = flight.destination || 'Destination';
+                    destDiv.appendChild(destCity);
+                    
+                    // Add destination airport code if available
+                    if (flight.destination_code) {
+                        const destCode = document.createElement('div');
+                        destCode.className = 'flight-card-code';
+                        destCode.textContent = flight.destination_code;
+                        destDiv.appendChild(destCode);
+                    }
+                    routeDiv.appendChild(destDiv);
+                    
+                    cardBody.appendChild(routeDiv);
+                    
+                    // Flight details (times, duration)
+                    const detailsDiv = document.createElement('div');
+                    detailsDiv.className = 'flight-card-details';
+                    
+                    // Departure time
+                    const departureDiv = document.createElement('div');
+                    departureDiv.className = 'flight-card-time';
+                    
+                    const departureTime = document.createElement('div');
+                    departureTime.className = 'flight-card-time-value';
+                    departureTime.textContent = flight.departure_time || '00:00';
+                    departureDiv.appendChild(departureTime);
+                    
+                    const departureLabel = document.createElement('div');
+                    departureLabel.className = 'flight-card-time-label';
+                    departureLabel.textContent = 'Departure';
+                    departureDiv.appendChild(departureLabel);
+                    
+                    detailsDiv.appendChild(departureDiv);
+                    
+                    // Duration
+                    const durationDiv = document.createElement('div');
+                    durationDiv.className = 'flight-card-duration';
+                    durationDiv.textContent = flight.duration || 'Duration';
+                    detailsDiv.appendChild(durationDiv);
+                    
+                    // Arrival time
+                    const arrivalDiv = document.createElement('div');
+                    arrivalDiv.className = 'flight-card-time';
+                    
+                    const arrivalTime = document.createElement('div');
+                    arrivalTime.className = 'flight-card-time-value';
+                    arrivalTime.textContent = flight.arrival_time || '00:00';
+                    arrivalDiv.appendChild(arrivalTime);
+                    
+                    const arrivalLabel = document.createElement('div');
+                    arrivalLabel.className = 'flight-card-time-label';
+                    arrivalLabel.textContent = 'Arrival';
+                    arrivalDiv.appendChild(arrivalLabel);
+                    
+                    detailsDiv.appendChild(arrivalDiv);
+                    
+                    cardBody.appendChild(detailsDiv);
+                    
+                    // Additional info
+                    const infoDiv = document.createElement('div');
+                    infoDiv.className = 'flight-card-info';
+                    
+                    // Aircraft info if available
+                    const aircraftDiv = document.createElement('div');
+                    aircraftDiv.className = 'flight-card-aircraft';
+                    aircraftDiv.textContent = flight.aircraft || 'Aircraft';
+                    infoDiv.appendChild(aircraftDiv);
+                    
+                    // Stop info if available
+                    if (flight.stops) {
+                        const stopsDiv = document.createElement('div');
+                        stopsDiv.textContent = flight.stops === 0 ? 'Non-stop' : `${flight.stops} stop(s)`;
+                        infoDiv.appendChild(stopsDiv);
+                    } else {
+                        const stopsDiv = document.createElement('div');
+                        stopsDiv.textContent = 'Non-stop';
+                        infoDiv.appendChild(stopsDiv);
+                    }
+                    
+                    cardBody.appendChild(infoDiv);
+                    flightCard.appendChild(cardBody);
+                    
+                    // Card footer with price and class
+                    const cardFooter = document.createElement('div');
+                    cardFooter.className = 'flight-card-footer';
+                    
+                    // Price
+                    const priceDiv = document.createElement('div');
+                    priceDiv.className = 'flight-card-price';
+                    priceDiv.textContent = flight.price || 'Price unavailable';
+                    cardFooter.appendChild(priceDiv);
+                    
+                    // Class
+                    const classDiv = document.createElement('div');
+                    let fareClass = 'Economy';
+                    let classStyle = 'flight-card-class-economy';
+                    
+                    if (flight.fare_class) {
+                        fareClass = flight.fare_class;
+                        if (fareClass.toLowerCase().includes('business')) {
+                            classStyle = 'flight-card-class-business';
+                        } else if (fareClass.toLowerCase().includes('first')) {
+                            classStyle = 'flight-card-class-first';
+                        } else if (fareClass.toLowerCase().includes('premium')) {
+                            classStyle = 'flight-card-class-premium';
+                        }
+                    }
+                    
+                    classDiv.className = `flight-card-class ${classStyle}`;
+                    classDiv.textContent = fareClass;
+                    cardFooter.appendChild(classDiv);
+                    
+                    flightCard.appendChild(cardFooter);
+                    
+                    // Add the complete card to the container
+                    flightCardsDiv.appendChild(flightCard);
+                });
+
+                flightResultsDiv.appendChild(detailsDiv);
+                contentDiv.appendChild(flightResultsDiv);
+            }
+
+            // If there are raw results, add them in a collapsible section
+            if (rawResults && rawResults.length > 0) {
+                const rawResultsDiv = document.createElement('div');
+                rawResultsDiv.className = 'flight-results';
+
+                // Create header
+                const headerDiv = document.createElement('div');
+                headerDiv.className = 'flight-header';
+                headerDiv.innerHTML = 'Raw Search Results <span>▶</span>';
+                headerDiv.onclick = function() {
+                    const detailsDiv = this.nextElementSibling;
+                    detailsDiv.classList.toggle('collapsed');
+                    this.querySelector('span').textContent = detailsDiv.classList.contains('collapsed') ? '▶' : '▼';
+                };
+                rawResultsDiv.appendChild(headerDiv);
+
+                // Create details container (initially collapsed)
+                const detailsDiv = document.createElement('div');
+                detailsDiv.className = 'flight-details collapsed';
+
+                // Add each raw result
+                rawResults.forEach(result => {
+                    const resultDiv = document.createElement('div');
+                    resultDiv.className = 'flight-item';
+
+                    if (result.title) {
+                        const titleDiv = document.createElement('div');
+                        titleDiv.className = 'flight-route';
+                        titleDiv.textContent = result.title;
+                        resultDiv.appendChild(titleDiv);
+                    }
+
+                    if (result.snippet) {
+                        const snippetDiv = document.createElement('div');
+                        snippetDiv.textContent = result.snippet;
+                        resultDiv.appendChild(snippetDiv);
+                    }
+
+                    if (result.link) {
+                        const linkDiv = document.createElement('div');
+                        const link = document.createElement('a');
+                        link.href = result.link;
+                        link.textContent = 'View Details';
+                        link.target = '_blank';
+                        linkDiv.appendChild(link);
+                        resultDiv.appendChild(linkDiv);
+                    }
+
+                    detailsDiv.appendChild(resultDiv);
+                });
+
+                rawResultsDiv.appendChild(detailsDiv);
+                contentDiv.appendChild(rawResultsDiv);
+            }
+
+            messageDiv.appendChild(contentDiv);
+            chatMessages.appendChild(messageDiv);
+
+            // Scroll to bottom
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+
+            // Add to chat history
+            chatHistory.push({ role, content, flightData, rawResults });
+        }
+
+        // Function to show typing indicator
+        function showTypingIndicator() {
+            const indicatorDiv = document.createElement('div');
+            indicatorDiv.className = 'typing-indicator';
+            indicatorDiv.id = 'typingIndicator';
+            
+            for (let i = 0; i < 3; i++) {
+                const dot = document.createElement('div');
+                dot.className = 'typing-dot';
+                indicatorDiv.appendChild(dot);
+            }
+            
+            chatMessages.appendChild(indicatorDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return indicatorDiv;
+        }
+
+        // Function to remove typing indicator
+        function removeTypingIndicator() {
+            const indicator = document.getElementById('typingIndicator');
+            if (indicator) {
+                indicator.remove();
+            }
+        }
+
+        // Function to send message to server
+        async function sendMessage(message) {
+            try {
+                // Show typing indicator
+                welcomeScreen.style.display = 'none';
+                chatMessages.style.display = 'flex';
+                const indicator = showTypingIndicator();
+
+                // Send request to server
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+
+                // Remove typing indicator
+                removeTypingIndicator();
+
+                if (!response.ok) {
+                    throw new Error('Network error');
+                }
+
+                const data = await response.json();
+                if (data.error) {
+                    addMessage('assistant', 'Sorry, there was a problem: ' + data.error);
+                } else if (data.response) {
+                    // Add assistant's response with any flight data
+                    addMessage('assistant', data.response, data.structured_flights || [], data.raw_flight_results || []);
+                } else {
+                    addMessage('assistant', 'I received your message but encountered an issue processing it.');
+                }
+            } catch (err) {
+                removeTypingIndicator();
+                addMessage('assistant', 'An unexpected error occurred. Please try again.');
+                console.error(err);
+            }
+        }
+
+        // Event listener for send button
+        sendButton.addEventListener('click', () => {
+            const message = chatInput.value.trim();
+            if (message) {
+                addMessage('user', message);
+                chatInput.value = '';
+                sendMessage(message);
+            }
+        });
+
+        // Event listener for Enter key
+        chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendButton.click();
+            }
+        });
+
+        // Focus input on page load
+        chatInput.focus();
+    </script>
+</body>
+</html>
