@@ -707,6 +707,11 @@
             }
             
             function formatFlightResults(message) {
+                // Handle array of flight objects
+                if (Array.isArray(message)) {
+                    return message.map(flight => createFlightCard(flight)).join('');
+                }
+                
                 const lines = message.split('\n');
                 let formattedHTML = '';
                 let flights = [];
@@ -917,74 +922,35 @@
             }
             
             function createFlightCard(flight) {
-                if (!flight.title) return '';
+                // Basic validation
+                if (!flight.airline && !flight.flight_number) return '';
                 
-                // Check if this is a full flight card or just info
-                const isFullCard = flight.departure || flight.airline;
+                // Airline name and flight number
+                const airlineName = flight.airline || '';
+                const flightNum = flight.flight_number ? ' ' + flight.flight_number : '';
                 
-                // Get airport codes for origin and destination
-                let departCode = 'DMM';
-                let arriveCode = 'RUH';
+                // Departure and arrival codes
+                const departCode = flight.origin || '';
+                const arriveCode = flight.destination || '';
                 
-                if (flight.route) {
-                    const routeParts = flight.route.split(' → ');
-                    if (routeParts.length === 2) {
-                        departCode = routeParts[0];
-                        arriveCode = routeParts[1];
-                    }
-                }
+                // Departure and arrival times
+                const departTime = flight.departure_time || '';
+                const arriveTime = flight.arrival_time || '';
                 
-                // Extract time from departure/arrival if available
-                let departTime = '11:00';
-                let arriveTime = '12:15';
+                // Duration if provided
+                const durationText = flight.duration || '';
                 
-                if (flight.departure && flight.departure.match(/\d+:\d+/)) {
-                    departTime = flight.departure.match(/\d+:\d+/)[0];
-                }
+                // Price
+                const price = flight.price || '';
                 
-                if (flight.arrival && flight.arrival.match(/\d+:\d+/)) {
-                    arriveTime = flight.arrival.match(/\d+:\d+/)[0];
-                }
-                
-                // Format duration
-                let durationText = flight.duration || '1h 15m';
-                if (durationText.includes('hour')) {
-                    durationText = durationText.replace('hours', 'h').replace('hour', 'h');
-                    if (durationText.includes('minute')) {
-                        durationText = durationText.replace('minutes', 'm').replace('minute', 'm');
-                    }
-                }
-                
-                // Format flight number
-                let flightNumber = '';
-                if (flight.title && flight.title.match(/[A-Z]{2}\d+/)) {
-                    flightNumber = flight.title.match(/[A-Z]{2}\d+/)[0];
-                }
-                
-                // Format airline name for the logo
-                let airlineName = flight.airline || 'Airline';
-                let airlineShort = airlineName.split(' ')[0];
-                if (airlineShort.length > 3) {
-                    airlineShort = airlineShort.substring(0, 3);
-                }
-                
-                // Format pricing
-                const price = flight.price || 'SAR 218';
-                const formattedPrice = price.includes('SAR') ? price : price.includes('$') ? 'SAR ' + (parseInt(price.replace('$', '')) * 3.75).toFixed(0) : price;
-                
-                // Determine if it's an eco-friendly flight (random for demo)
-                const isEco = Math.random() > 0.5;
-                
+                // Construct HTML
                 return `
-                    ${isEco ? `<div class="eco-info">
-                        <span>This flight emits 18% less CO<sub>2</sub>e than a typical flight on this route</span>
-                        <span class="eco-info-icon">i</span>
-                    </div>` : ''}
                     <div class="flight-card">
                         <button class="favorite-button">♡</button>
                         <div class="flight-card-content">
-                            <div class="airline-logo">${airlineShort}</div>
+                            <div class="airline-logo">${airlineName}</div>
                             <div class="flight-info">
+                                <div class="flight-header"><strong>${airlineName}${flightNum}</strong></div>
                                 <div class="flight-route">
                                     <div>
                                         <div class="flight-time">${departTime}</div>
@@ -992,20 +958,16 @@
                                     </div>
                                     <div class="flight-duration">
                                         <div>${durationText}</div>
-                                        <div class="flight-line"></div>
-                                        <div class="flight-type">Direct</div>
                                     </div>
                                     <div>
                                         <div class="flight-time">${arriveTime}</div>
                                         <div class="flight-airport">${arriveCode}</div>
                                     </div>
                                 </div>
-                                ${flight.description ? `<div class="card-description">${flight.description}</div>` : ''}
                             </div>
                         </div>
                         <div class="flight-price-container">
-                            <div class="flight-deals">17 deals from</div>
-                            <div class="flight-price">${formattedPrice}</div>
+                            <div class="flight-price">${price}</div>
                             <button class="select-button">Select</button>
                         </div>
                     </div>

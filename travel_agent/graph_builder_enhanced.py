@@ -8,7 +8,7 @@ import os
 from typing import Dict, Any, List, Optional, Union, TypedDict, Callable
 from uuid import uuid4
 
-from langgraph.graph import StateGraph
+from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 try:
     from langgraph.checkpoint.redis import RedisSaver
@@ -112,6 +112,10 @@ class EnhancedTravelAgentGraph:
         
         # From human approval to response generation
         self.graph.add_edge("human_approval", "response_generation")
+        
+        # Add terminal edges to mark end of workflow
+        self.graph.add_edge("response_generation", END)
+        self.graph.add_edge("error_handling", END)
         
         # Compile the graph
         self.compiled_graph = self.graph.compile()

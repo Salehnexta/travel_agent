@@ -73,14 +73,14 @@ class SearchToolManager:
             max_retries=3
         )
         self.session.mount('https://', adapter)
-    
+
     def _generate_cache_key(self, query: str, search_type: str, location: Optional[str]) -> str:
         """Generate a unique key for caching search results."""
         location_str = location if location else "global"
         # Create a hash of the query parameters for shorter keys
         combined = f"{query}::{search_type}::{location_str}"
         return f"search:{hashlib.md5(combined.encode()).hexdigest()}"
-    
+
     def _get_from_cache(self, cache_key: str) -> Optional[Dict]:
         """Get results from Redis cache if they exist and are valid."""
         if not self.cache_enabled:
@@ -106,7 +106,7 @@ class SearchToolManager:
             logger.info(f"Saved to cache: {cache_key}")
         except Exception as e:
             logger.warning(f"Error saving to cache: {str(e)}")
-    
+
     @retry(
         retry=retry_if_exception_type((RateLimitException, requests.exceptions.Timeout, 
                                        requests.exceptions.ConnectionError)),
@@ -473,7 +473,7 @@ class SearchToolManager:
                     'name': item.get('title', '').replace(' - Booking.com', '').replace(' | Hotels.com', ''),
                     'description': item.get('snippet', ''),
                     'link': item.get('link', ''),
-                    'source': self._extract_domain(item.get('link', '')),
+                    'source': self._extract_domain(item.get('link', ''))
                 }
                 
                 # Add thumbnail if available
@@ -875,8 +875,37 @@ class SearchToolManager:
             price_info['one_way'] = f"${price_info['one_way']:.2f}"
         if price_info['round_trip'] is not None:
             price_info['round_trip'] = f"${price_info['round_trip']:.2f}"
-            
+        
         for provider in price_info['by_provider']:
             price_info['by_provider'][provider] = f"${price_info['by_provider'][provider]:.2f}"
         
         return price_info
+
+class SearchToolManager:
+    # ... existing methods ...
+
+    # === Public wrappers for debug/test compatibility ===
+    def flight_search(self, origin, destination, date=None, return_date=None, travelers=1, time_preference=None):
+        """
+        Public wrapper for flight search to match debug/test scripts.
+        """
+        return self.search_flights(origin, destination, departure_date=date, return_date=return_date, num_passengers=travelers, time_preference=time_preference)
+
+    def hotel_search(self, location, check_in=None, check_out=None, guests=2, preferences=None):
+        """
+        Public wrapper for hotel search to match debug/test scripts.
+        """
+        return self.search_hotels(location, check_in=check_in, check_out=check_out, num_people=guests)
+
+    def general_search(self, query, search_type='organic', location=None, num_results=5):
+        """
+        Public wrapper for general search to match debug/test scripts.
+        """
+        return self.search(query, search_type=search_type, location=location, num_results=num_results)
+
+
+def search_destination_info(location_name: str) -> Dict[str, Any]:
+    """Search destination info via SearchToolManager."""
+    manager = SearchToolManager()
+    query = f"destination information for {location_name}"
+    return manager.search(query, search_type='places')
