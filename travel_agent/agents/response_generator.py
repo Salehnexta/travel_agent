@@ -189,80 +189,121 @@ class ResponseGenerator:
                     # Get structured flights from the enhanced parser
                     structured_flights = result.data.get("structured", [])
                     
-                    # Get origin, destination, and date information
-                    query = result.data.get("query", "")
-                    search_params = {}
-                    
-                    # Try to extract origin and destination from results
+                    # --- New Flight Filtering Logic ---
                     if structured_flights:
-                        first_flight = structured_flights[0]
-                        origin = first_flight.get("origin", "origin")
-                        destination = first_flight.get("destination", "destination")
-                        date = first_flight.get("date", "")
-                    else:
-                        # Fall back to parsing from query
-                        origin = "unknown origin"
-                        destination = "unknown destination"
-                        date = ""
+                        # Apply basic filters (e.g., duration, airline - assuming 'stops' is added by parser)
+                        # TODO: Use SEARCH_CONFIG if available and robust
+                        all_valid_flights = [
+                            f for f in structured_flights 
+                            # Add duration/airline filters here if needed later
+                        ]
                         
-                        # Try to extract from query
-                        if "from" in query and "to" in query:
-                            query_parts = query.split()
-                            try:
-                                from_index = query_parts.index("from")
-                                to_index = query_parts.index("to")
-                                if from_index + 1 < len(query_parts):
-                                    origin = query_parts[from_index + 1]
-                                if to_index + 1 < len(query_parts):
-                                    destination = query_parts[to_index + 1]
-                            except ValueError:
-                                pass
-                    
-                    # Format the flight options heading
-                    formatted_text += f"Found flight options from {origin} to {destination}"
-                    if date:
-                        formatted_text += f" on {date}"
-                    formatted_text += ":\n"
-                    
-                    # Display structured flight options
-                    if structured_flights:
-                        formatted_text += "\nFLIGHT OPTIONS:\n"
-                        for j, flight in enumerate(structured_flights[:5], 1):  # Show up to 5 flights
-                            flight_text = f"- Option {j}: "
+                        # Separate direct and one-stop flights
+                        direct_flights = [f for f in all_valid_flights if f.get('stops') == 0]
+                        one_stop_flights = [f for f in all_valid_flights if f.get('stops') == 1]
+                        
+                        # -- Store final flights for package cost calculation --
+                        final_flights_for_cost = direct_flights + one_stop_flights[:max(0, 8 - len(direct_flights))]
+                        
+                        # Combine results: all direct + up to (8 - num_direct) one-stop
+                        final_flights = direct_flights
+                        needed_one_stop = 8 - len(direct_flights)
+                        
+                        # --- Package Itinerary Generation --- 
+                        package_details = {}
+                        activity_results = None
+                        hotel_results = None # Fetch hotel results too
+                        
+                        # Fetch Activity & Hotel Results (Assume SearchManager adds these)
+                        for res in search_results:
+                            if res.type == "activity":
+                                activity_results = res.data.get("structured", [])
+                            elif res.type == "hotel":
+                                hotel_results = res.data.get("structured", [])
+                                
+                        # Calculate Estimated Costs 
+                        total_flight_cost = sum(f.get('price_value', 0) for f in final_flights_for_cost if f.get('price_value')) 
+                        # Estimate hotel cost (e.g., first hotel price * nights)
+                        num_nights = (state.get_primary_date_range() or {}).get('duration', 4) # Default 4 nights if duration unknown
+                        estimated_hotel_price_per_night = (hotel_results[0].get('price_value', 300) if hotel_results and hotel_results[0].get('price_value') else 300) # Default 300 SAR/night
+                        total_hotel_cost = estimated_hotel_price_per_night * num_nights
+                        total_activity_cost = 500 # Placeholder SAR
+                        
+                        estimated_total_cost = total_flight_cost + total_hotel_cost + total_activity_cost
+                        
+                        # Structure the Day-by-Day Itinerary 
+                        num_days = num_nights + 1 # 5 days for 4 nights
+                        dest_name = state.get_primary_destination().name if state.get_primary_destination() else "your destination"
+                        origin_name = state.origins[0].name if state.origins else "your origin"
+                        
+                        itinerary_text = f"\n**Draft {num_days}-Day {dest_name.title()} Package from {origin_name.title()} (Approx. SAR {estimated_total_cost}):**\n"
+                        itinerary_text += f"*   Flights: Approx. SAR {total_flight_cost} (Round Trip)\n"
+                        itinerary_text += f"*   Hotel: Approx. SAR {total_hotel_cost} ({num_nights} nights - based on {estimated_hotel_price_per_night} SAR/night estimate)\n"
+                        itinerary_text += f"*   Activities/Misc: Approx. SAR {total_activity_cost}\n"
+                        itinerary_text += "------------------------------------\n"
+                        
+                        # TODO: Use actual activity_results with descriptions when available from SearchManager/Parser
+                        # Using placeholders for Bangkok example with descriptions:
+                        # Structure: {'name': 'Name', 'description': 'Desc', 'cost': 'Cost Info'} 
+                        daily_plan_with_details = {
+                            # Using Bangkok placeholders for a 7-day trip example
+                             1: [{"name": "Arrive in Bangkok (BKK), Check into hotel", "description": "Settle in and prepare for your adventure.", "cost": "Varies"},
+                                 {"name": "Evening: Explore Sukhumvit Road", "description": "Experience Bangkok's vibrant nightlife, street food, and shopping.", "cost": "Varies"}],
+                             2: [{"name": "Morning: Grand Palace & Wat Phra Kaew", "description": "Visit the stunning former royal residence and the Temple of the Emerald Buddha.", "cost": "Est. SAR 60 entry"},
+                                 {"name": "Afternoon: Wat Pho & Wat Arun", "description": "See the giant Reclining Buddha at Wat Pho and climb the iconic Temple of Dawn.", "cost": "Est. SAR 30 entry total"}],
+                             3: [{"name": "Full Day: Floating Market Tour", "description": "Experience a traditional market via longtail boat (e.g., Damnoen Saduak).", "cost": "Est. SAR 150-250 tour"},
+                                 {"name": "Evening: Asiatique The Riverfront", "description": "Enjoy shopping, dining, and entertainment by the river.", "cost": "Varies"}],
+                             4: [{"name": "Morning: Chatuchak Market (Weekend) / Mall", "description": "Explore one of the world's largest outdoor markets or a modern shopping mall (MBK/Siam Paragon).", "cost": "Varies"},
+                                 {"name": "Afternoon: Jim Thompson House Museum", "description": "Discover the beautiful Thai house and art collection of the American silk entrepreneur.", "cost": "Est. SAR 25 entry"}],
+                             5: [{"name": "Full Day: Ayutthaya Historical Park", "description": "Explore the ruins of the former Siamese capital, a UNESCO site, via day trip.", "cost": "Est. SAR 200-300 tour + entry"}],
+                             6: [{"name": "Morning: Thai Cooking Class", "description": "Learn to cook authentic Thai dishes hands-on.", "cost": "Est. SAR 120-180"},
+                                  {"name": "Afternoon: Relax/Spa", "description": "Enjoy some downtime or indulge in a traditional Thai massage.", "cost": "SAR 100+"},
+                                  {"name": "Evening: Rooftop Bar Experience", "description": "Enjoy panoramic city views from a sky bar (e.g., Lebua at State Tower).", "cost": "Drinks SAR 50+" }],
+                             7: [{"name": "Morning: Last minute shopping", "description": "Grab any remaining souvenirs or revisit a favourite spot.", "cost": "Varies"},
+                                 {"name": "Depart from Bangkok (BKK)", "description": "Head to Suvarnabhumi Airport for your return flight."}]
+                        }
+ 
+                        for day in range(1, num_days + 1):
+                            itinerary_text += f"**Day {day}:**\n"
+                            if day in daily_plan_with_details:
+                                for activity in daily_plan_with_details[day]:
+                                    cost_str = f" ({activity.get('cost', 'Cost varies')})" 
+                                    itinerary_text += f"- **{activity.get('name', 'Activity')}**{cost_str}: {activity.get('description', 'Details not available.')}\n" # Include description
+                            else:
+                                itinerary_text += f"- Explore {dest_name.title()} (Details vary)\n"
+                            itinerary_text += "\n" 
                             
-                            # Add airline and flight number if available
-                            if flight.get("airline"):
-                                flight_text += f"{flight.get('airline')} "
-                            if flight.get("flight_number"):
-                                flight_text += f"Flight {flight.get('flight_number')} "
-                                
-                            # Add times if available
-                            has_times = False
-                            if flight.get("departure_time"):
-                                flight_text += f"Departs: {flight.get('departure_time')} "
-                                has_times = True
-                            if flight.get("arrival_time"):
-                                flight_text += f"Arrives: {flight.get('arrival_time')} "
-                                has_times = True
-                                
-                            # Add price information
-                            if flight.get("price"):
-                                flight_text += f"Price: {flight.get('price')} "
-                                
-                            # Add source info
-                            flight_text += f"(via {flight.get('source', 'Flight Search')})"
-                            
-                            # Add synthetic data disclaimer if applicable
-                            if flight.get("synthetic"):
-                                flight_text += " (estimated)"
-                                
-                            formatted_text += f"{flight_text}\n"
-                    else:
-                        # Fall back to raw search results
-                        raw_flights = result.data.get("raw", [])
-                        formatted_text += "\nFLIGHT SEARCH RESULTS:\n"
-                        for j, flight in enumerate(raw_flights[:3], 1):  # Limit to 3 flights
-                            formatted_text += f"- {flight.get('title', 'Unknown Flight')}: {flight.get('snippet', '')}\n"
+                        formatted_text += itinerary_text
+                        # --- End Package Itinerary Generation ---
+                        
+                        # Format the final list (final_flights) for display
+                        if final_flights:
+                            formatted_text += f"\nFound {len(final_flights)} suitable outbound flights for {origin_name} to {dest_name.title()}:\n"
+                            # TODO: Refine flight display for round trip clarity
+                            for i, flight in enumerate(final_flights, 1):
+                                stops_desc = f"{flight.get('stops', '?')} stops"
+                                if flight.get('stops') == 0:
+                                    stops_desc = "Direct"
+                                if flight.get('stops') == 1:
+                                    stops_desc = "1 stop"
+                                 
+                                price_str = f"SAR {flight.get('price_value', 'N/A')}" if flight.get('price_value') else flight.get('price', 'N/A') # Use price_value if available
+                                formatted_text += f"{i}. Airline: {flight.get('airline', 'N/A')}, Price: {price_str}, Stops: {stops_desc}, Departure: {flight.get('departure_time', 'N/A')}, Arrival: {flight.get('arrival_time', 'N/A')}\n"
+                            formatted_text += "\n*(Return flight options matching your dates would also be presented here. Cost estimate below assumes round trip.)*\n"
+                        else:
+                            formatted_text += "\nCould not find suitable flights based on the initial search.\n"
+                     
+                        # TEMP: Double the cheapest outbound for a rough round-trip estimate if only outbound shown
+                        if final_flights_for_cost and total_flight_cost > 0:
+                            cheapest_outbound = min(f.get('price_value', float('inf')) for f in final_flights_for_cost if f.get('price_value'))
+                            if cheapest_outbound != float('inf'):
+                                # Assume return is roughly same price for estimation for now
+                                total_flight_cost = cheapest_outbound * 2 
+                            else: # Fallback if no prices found
+                                total_flight_cost = 2500 # Default placeholder
+                        else:
+                            total_flight_cost = 2500 # Default placeholder
+                    # --- End New Flight Filtering Logic ---
                 
                 elif result_type == "destination":
                     general = result.data.get("general", {})
