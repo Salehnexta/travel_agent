@@ -63,7 +63,7 @@ class SearchToolManager:
         
         self.base_url = "https://google.serper.dev"
         self.cache_enabled = cache_enabled
-        self.cache_ttl = 7200  # Cache TTL in seconds (2 hours)
+        self.cache_ttl = 86400  # Cache TTL in seconds (24 hours)
         self.session = requests.Session()  # Persistent session for connection pooling
         
         # Configure session for better performance
@@ -80,6 +80,53 @@ class SearchToolManager:
         # Create a hash of the query parameters for shorter keys
         combined = f"{query}::{search_type}::{location_str}"
         return f"search:{hashlib.md5(combined.encode()).hexdigest()}"
+        
+    def _find_similar_query_cache(self, query: str, search_type: str, location: Optional[str]) -> Optional[Dict]:
+        """Find cached results for similar queries to reduce API calls."""
+        if not self.cache_enabled:
+            return None
+            
+        try:
+            # Get all search cache keys
+            search_keys = redis_client.keys("search:*")
+            
+            # Clean the query for comparison (lowercase, remove extra spaces)
+            clean_query = " ".join(query.lower().split())
+            
+            # Extract key terms from the query
+            query_terms = set(clean_query.split())
+            key_terms = {word for word in query_terms if len(word) > 3 and word not in {
+                "from", "to", "the", "and", "for", "with", "this", "that", "what", "when", "where", "how", "flight", "hotel"
+            }}
+            
+            for key in search_keys:
+                # Get the cached data
+                cached_data = redis_client.get(key)
+                if not cached_data:
+                    continue
+                    
+                try:
+                    data = json.loads(cached_data)
+                    # Check if this is a relevant cache entry
+                    if "query" in data and search_type in data.get("type", ""):
+                        cached_query = data["query"].lower()
+                        
+                        # Check for significant term overlap
+                        cached_terms = set(cached_query.split())
+                        key_cached_terms = {word for word in cached_terms if len(word) > 3}
+                        
+                        # If there's significant overlap in key terms, use this cache
+                        overlap = key_terms.intersection(key_cached_terms)
+                        if len(overlap) >= min(2, len(key_terms)):
+                            logger.info(f"Found similar query cache: {data['query']} for query: {query}")
+                            return data
+                except:
+                    continue
+                    
+            return None
+        except Exception as e:
+            logger.warning(f"Error finding similar query cache: {str(e)}")
+            return None
     
     def _get_from_cache(self, cache_key: str) -> Optional[Dict]:
         """Get results from Redis cache if they exist and are valid."""
@@ -110,8 +157,8 @@ class SearchToolManager:
     @retry(
         retry=retry_if_exception_type((RateLimitException, requests.exceptions.Timeout, 
                                        requests.exceptions.ConnectionError)),
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10)
+        stop=stop_after_attempt(5),  # Increase max retry attempts
+        wait=wait_exponential(multiplier=2, min=4, max=60)  # More aggressive backoff strategy
     )
     def search(
         self, 
@@ -144,6 +191,36 @@ class SearchToolManager:
         cached_result = self._get_from_cache(cache_key)
         if cached_result:
             return cached_result
+            
+        # Try to find similar query in cache
+        similar_result = self._find_similar_query_cache(query, search_type, location)
+        if similar_result:
+            # Save this result under the current query's cache key for future direct hits
+            self._save_to_cache(cache_key, similar_result)
+            return similar_result
+            
+        # Check rate limiting before making API call
+        rate_limit_key = "serper_api_rate_limit"
+        current_hour = datetime.now().strftime("%Y-%m-%d-%H")
+        hourly_key = f"{rate_limit_key}:{current_hour}"
+        
+        # Get current count of API calls this hour
+        try:
+            call_count = redis_client.get(hourly_key)
+            call_count = int(call_count) if call_count else 0
+            
+            # If we're approaching the limit (20 per hour), wait longer between calls
+            if call_count >= 15:
+                logger.warning(f"Approaching rate limit: {call_count}/20 calls this hour")
+                time.sleep(5)  # Add delay to spread out requests
+                
+            # If we're at or over the limit, raise exception to trigger retry with backoff
+            if call_count >= 19:
+                logger.error(f"Rate limit reached: {call_count}/20 calls this hour")
+                raise RateLimitException("Serper API rate limit reached for this hour")
+        except Exception as e:
+            logger.warning(f"Error checking rate limits: {str(e)}")
+            # Continue with the request even if rate limit checking fails
         
         # Proceed with API request if no valid cache found
         if not self.api_key:
@@ -210,6 +287,23 @@ class SearchToolManager:
             
             # Cache the successful result in Redis
             self._save_to_cache(cache_key, result)
+            
+            # Increment the API call counter for rate limiting
+            try:
+                # Increment counter and set expiry to ensure it resets after the hour
+                redis_client.incr(hourly_key)
+                redis_client.expire(hourly_key, 3600)  # Expire after 1 hour
+                
+                # Log current usage
+                new_count = redis_client.get(hourly_key)
+                new_count = int(new_count) if new_count else 1
+                logger.info(f"Serper API usage: {new_count}/20 calls this hour")
+                
+                # If we're getting close to the limit, increase cache TTL to reduce future calls
+                if new_count >= 15:
+                    self.cache_ttl = 172800  # 48 hours when approaching limits
+            except Exception as e:
+                logger.warning(f"Error updating rate limit counter: {str(e)}")
             
             return result
             

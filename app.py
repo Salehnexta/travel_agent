@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 # Initialize Flask app
-app = Flask(__name__)
+app = Flask(__name__, template_folder="travel_agent/templates")
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key')
 
 # Enable CORS for all routes
@@ -80,7 +80,13 @@ def load_state(session_id: str) -> Optional[TravelState]:
 @app.route('/')
 def index():
     """Render the main page."""
-    return render_template('index.html')
+    return render_template('frontpage.html')
+
+
+@app.route('/frontpage')
+def frontpage():
+    """Render the new HTML native frontpage."""
+    return render_template('frontpage.html')
 
 
 @app.route('/api/chat', methods=['POST'])
@@ -116,9 +122,22 @@ def chat():
         if not response:
             return jsonify({'error': 'No response generated'}), 500
         
+        # Attempt to extract flight results from the updated state
+        structured_flights = []
+        raw_flight_results = []
+        if hasattr(updated_state, 'search_results') and 'flight' in updated_state.search_results:
+            # Collect all structured and raw results from all flight search results
+            for result in updated_state.search_results['flight']:
+                if isinstance(result.data, dict):
+                    if 'structured' in result.data:
+                        structured_flights.extend(result.data['structured'])
+                    if 'raw' in result.data:
+                        raw_flight_results.extend(result.data['raw'])
         return jsonify({
             'response': response,
-            'session_id': session_id
+            'session_id': session_id,
+            'structured_flights': structured_flights,
+            'raw_flight_results': raw_flight_results
         })
         
     except Exception as e:
