@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional
 from flask import Flask, request, jsonify, render_template, session
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 from dotenv import load_dotenv
 from uuid import uuid4
 
@@ -22,11 +22,13 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 # Initialize Flask app
-app = Flask(__name__, template_folder="travel_agent/templates")
+app = Flask(__name__, template_folder=os.path.join(os.path.dirname(__file__), 'travel_agent/templates'))
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key')
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0  # Disable caching for debugging
+app.jinja_env.auto_reload = True
 
 # Enable CORS for all routes
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
 
 # Configure Redis with connection pooling and timeouts
 redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
@@ -80,7 +82,7 @@ def load_state(session_id: str) -> Optional[TravelState]:
 @app.route('/')
 def index():
     """Render the main page."""
-    return render_template('frontpage.html')
+    return render_template('index.html')
 
 
 @app.route('/frontpage')
@@ -89,10 +91,22 @@ def frontpage():
     return render_template('frontpage.html')
 
 
-@app.route('/api/chat', methods=['POST'])
+@app.route('/api/chat', methods=['POST', 'OPTIONS'])
+@cross_origin()
 @limiter.exempt
 def chat():
-    """Handle chat API endpoint."""
+    # Handle CORS preflight
+    if request.method == 'OPTIONS':
+        return '', 204
+    # Debug incoming request
+    print('=== /api/chat Debug ===')
+    print('Headers:', dict(request.headers))
+    data_bytes = request.get_data()
+    print('Raw Data:', data_bytes)
+    try:
+        print('JSON Payload:', request.get_json(force=False, silent=True))
+    except Exception as e:
+        print('JSON parse error:', str(e))
     try:
         data = request.json
         if not data or 'message' not in data:
